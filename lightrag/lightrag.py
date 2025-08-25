@@ -491,19 +491,19 @@ class LightRAG:
             namespace=NameSpace.VECTOR_STORE_ENTITIES,
             workspace=self.workspace,
             embedding_func=self.embedding_func,
-            meta_fields={"entity_name", "source_id", "content", "file_path"},
+            meta_fields={"entity_name", "source_id", "content", "file_path", "tags"},
         )
         self.relationships_vdb: BaseVectorStorage = self.vector_db_storage_cls(  # type: ignore
             namespace=NameSpace.VECTOR_STORE_RELATIONSHIPS,
             workspace=self.workspace,
             embedding_func=self.embedding_func,
-            meta_fields={"src_id", "tgt_id", "source_id", "content", "file_path"},
+            meta_fields={"src_id", "tgt_id", "source_id", "content", "file_path", "tags"},
         )
         self.chunks_vdb: BaseVectorStorage = self.vector_db_storage_cls(  # type: ignore
             namespace=NameSpace.VECTOR_STORE_CHUNKS,
             workspace=self.workspace,
             embedding_func=self.embedding_func,
-            meta_fields={"full_doc_id", "content", "file_path"},
+            meta_fields={"full_doc_id", "content", "file_path", "tags"},
         )
 
         # Initialize document status storage
@@ -818,6 +818,7 @@ class LightRAG:
         ids: str | list[str] | None = None,
         file_paths: str | list[str] | None = None,
         track_id: str | None = None,
+        tags: dict[str, str | list[str]] | None = None,
     ) -> str:
         """Sync Insert documents with checkpoint support
 
@@ -843,6 +844,7 @@ class LightRAG:
                 ids,
                 file_paths,
                 track_id,
+                tags,
             )
         )
 
@@ -854,6 +856,7 @@ class LightRAG:
         ids: str | list[str] | None = None,
         file_paths: str | list[str] | None = None,
         track_id: str | None = None,
+        tags: dict[str, str | list[str]] | None = None,
     ) -> str:
         """Async Insert documents with checkpoint support
 
@@ -874,7 +877,7 @@ class LightRAG:
         if track_id is None:
             track_id = generate_track_id("insert")
 
-        await self.apipeline_enqueue_documents(input, ids, file_paths, track_id)
+        await self.apipeline_enqueue_documents(input, ids, file_paths, track_id, tags)
         await self.apipeline_process_enqueue_documents(
             split_by_character, split_by_character_only
         )
@@ -930,6 +933,7 @@ class LightRAG:
                     "tokens": tokens,
                     "chunk_order_index": index,
                     "file_path": file_path,
+                    # No tags in deprecated custom insert path
                 }
 
             doc_ids = set(inserting_chunks.keys())
@@ -959,6 +963,7 @@ class LightRAG:
         ids: list[str] | None = None,
         file_paths: str | list[str] | None = None,
         track_id: str | None = None,
+        tags: dict[str, str | list[str]] | None = None,
     ) -> str:
         """
         Pipeline for Processing Documents
@@ -1039,20 +1044,22 @@ class LightRAG:
             }
 
         # 2. Generate document initial status (without content)
-        new_docs: dict[str, Any] = {
-            id_: {
+        new_docs: dict[str, Any] = {}
+        for id_, content_data in contents.items():
+            base = {
                 "status": DocStatus.PENDING,
                 "content_summary": get_content_summary(content_data["content"]),
                 "content_length": len(content_data["content"]),
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
-                "file_path": content_data[
-                    "file_path"
-                ],  # Store file path in document status
-                "track_id": track_id,  # Store track_id in document status
+                "file_path": content_data["file_path"],
+                "track_id": track_id,
+                "metadata": {},
             }
-            for id_, content_data in contents.items()
-        }
+            if tags:
+                # Persist tags at document level and propagate same tags later to chunks
+                base["metadata"]["tags"] = tags
+            new_docs[id_] = base
 
         # 3. Filter out already processed documents
         # Get docs ids
@@ -1279,7 +1286,7 @@ class LightRAG:
                         "track_id": getattr(status_doc, "track_id", ""),
                         # Clear any error messages and processing metadata
                         "error_msg": "",
-                        "metadata": {},
+                        "metadata": getattr(status_doc, "metadata", {}) or {},
                     }
 
                     # Update the status in to_process_docs as well
@@ -1463,12 +1470,20 @@ class LightRAG:
                             content = content_data["content"]
 
                             # Generate chunks from document
+                            # Extract tags from doc status metadata if available
+                            existing_metadata = getattr(status_doc, "metadata", {}) or {}
+                            _doc_tags = (
+                                existing_metadata.get("tags")
+                                if isinstance(existing_metadata, dict)
+                                else None
+                            )
                             chunks: dict[str, Any] = {
                                 compute_mdhash_id(dp["content"], prefix="chunk-"): {
                                     **dp,
                                     "full_doc_id": doc_id,
                                     "file_path": file_path,  # Add file path to each chunk
                                     "llm_cache_list": [],  # Initialize empty LLM cache list for each chunk
+                                    **({"tags": _doc_tags} if _doc_tags else {}),
                                 }
                                 for dp in self.chunking_func(
                                     self.tokenizer,
@@ -1488,6 +1503,10 @@ class LightRAG:
 
                             # Process document in two stages
                             # Stage 1: Process text chunks and docs (parallel execution)
+                            # Merge metadata preserving existing values (e.g. tags)
+                            _metadata_processing = dict(existing_metadata) if isinstance(existing_metadata, dict) else {}
+                            _metadata_processing.update({"processing_start_time": processing_start_time})
+
                             doc_status_task = asyncio.create_task(
                                 self.doc_status.upsert(
                                     {
@@ -1505,9 +1524,7 @@ class LightRAG:
                                             ).isoformat(),
                                             "file_path": file_path,
                                             "track_id": status_doc.track_id,  # Preserve existing track_id
-                                            "metadata": {
-                                                "processing_start_time": processing_start_time
-                                            },
+                                            "metadata": _metadata_processing,
                                         }
                                     }
                                 )
@@ -1566,7 +1583,14 @@ class LightRAG:
                             # Record processing end time for failed case
                             processing_end_time = int(time.time())
 
-                            # Update document status to failed
+                            # Update document status to failed (preserve existing metadata like tags)
+                            _metadata_failed = dict(existing_metadata) if isinstance(existing_metadata, dict) else {}
+                            _metadata_failed.update(
+                                {
+                                    "processing_start_time": processing_start_time,
+                                    "processing_end_time": processing_end_time,
+                                }
+                            )
                             await self.doc_status.upsert(
                                 {
                                     doc_id: {
@@ -1580,10 +1604,7 @@ class LightRAG:
                                         ).isoformat(),
                                         "file_path": file_path,
                                         "track_id": status_doc.track_id,  # Preserve existing track_id
-                                        "metadata": {
-                                            "processing_start_time": processing_start_time,
-                                            "processing_end_time": processing_end_time,
-                                        },
+                                        "metadata": _metadata_failed,
                                     }
                                 }
                             )
@@ -1599,6 +1620,7 @@ class LightRAG:
                                     entity_vdb=self.entities_vdb,
                                     relationships_vdb=self.relationships_vdb,
                                     global_config=asdict(self),
+                                    text_chunks_db=self.text_chunks,
                                     full_entities_storage=self.full_entities,
                                     full_relations_storage=self.full_relations,
                                     doc_id=doc_id,
@@ -1613,6 +1635,14 @@ class LightRAG:
                                 # Record processing end time
                                 processing_end_time = int(time.time())
 
+                                # Update document status to processed (preserve existing metadata like tags)
+                                _metadata_processed = dict(existing_metadata) if isinstance(existing_metadata, dict) else {}
+                                _metadata_processed.update(
+                                    {
+                                        "processing_start_time": processing_start_time,
+                                        "processing_end_time": processing_end_time,
+                                    }
+                                )
                                 await self.doc_status.upsert(
                                     {
                                         doc_id: {
@@ -1627,10 +1657,7 @@ class LightRAG:
                                             ).isoformat(),
                                             "file_path": file_path,
                                             "track_id": status_doc.track_id,  # Preserve existing track_id
-                                            "metadata": {
-                                                "processing_start_time": processing_start_time,
-                                                "processing_end_time": processing_end_time,
-                                            },
+                                            "metadata": _metadata_processed,
                                         }
                                     }
                                 )

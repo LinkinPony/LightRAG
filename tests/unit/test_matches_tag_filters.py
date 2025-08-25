@@ -2,7 +2,7 @@ import pytest
 
 
 @pytest.mark.unit
-@pytest.mark.xfail(reason="matches_tag_filters not implemented yet", strict=False)
+
 def test_matches_tag_filters_semantics():
     """
     Phase 2 utility to be implemented:

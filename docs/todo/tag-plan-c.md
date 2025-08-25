@@ -62,44 +62,45 @@ Notes:
 
 ### Phased implementation plan (step-by-step, unambiguous)
 
-Phase 1 — Schema & insert pipeline (chunks only)
-1. Add `tags` parameter to `LightRAG.insert/ainsert` (default None).
-2. In `apipeline_enqueue_documents`, persist `metadata.tags` on doc_status records when `tags` provided.
-3. During chunk creation (in `apipeline_process_enqueue_documents` where `all_chunks_data` is prepared), set `chunk.tags = tags`.
-4. Update `lightrag.py` meta_fields for Qdrant chunks to include `"tags"`:
-   - `self.chunks_vdb` meta_fields: {"full_doc_id", "content", "file_path", "tags"}
+Phase 1 — Schema & insert pipeline (chunks only) — DONE
+1. Add `tags` parameter to `LightRAG.insert/ainsert` (default None). — DONE
+2. In `apipeline_enqueue_documents`, persist `metadata.tags` on doc_status records when `tags` provided. — DONE
+3. During chunk creation (in `apipeline_process_enqueue_documents` where `all_chunks_data` is prepared), set `chunk.tags = tags`. — DONE
+4. Update `lightrag.py` meta_fields for Qdrant chunks to include "tags":
+   - `self.chunks_vdb` meta_fields: {"full_doc_id", "content", "file_path", "tags"} — DONE
 5. Acceptance:
-   - Insert with tags succeeds; doc_status shows metadata.tags; chunks in KV carry tags; Qdrant payload for chunks includes tags.
+   - Insert with tags succeeds; doc_status shows metadata.tags; chunks in KV carry tags; Qdrant payload for chunks includes tags. — DONE
 
-Phase 2 — Query surfaces & client-side filtering (all modes)
-1. Extend `QueryParam` with `tag_equals: dict[str,str] = {}`, `tag_in: dict[str, list[str]] = {}`.
-2. Implement `matches_tag_filters(tags: dict[str, Any], tag_equals, tag_in) -> bool` in a shared utility.
-3. `_get_vector_context` (naive/mix): after retrieval, keep only results where payload.tags (or KV chunk.tags fallback) satisfy filters.
-4. `_find_related_text_unit_from_entities`: when assembling chunks for entities, filter the chunk list by tags before returning.
+Phase 2 — Query surfaces & client-side filtering (all modes) — DONE
+1. Extend `QueryParam` with `tag_equals: dict[str,str] = {}`, `tag_in: dict[str, list[str]] = {}`. — DONE
+2. Implement `matches_tag_filters(tags: dict[str, Any], tag_equals, tag_in) -> bool` in a shared utility. — DONE
+3. `_get_vector_context` (naive/mix): after retrieval, keep only results where payload.tags (or KV chunk.tags fallback) satisfy filters. — DONE
+4. `_find_related_text_unit_from_entities`: when assembling chunks for entities, filter the chunk list by tags before returning. — DONE
 5. Acceptance:
-   - With filters provided, returned chunks all satisfy constraints across naive/local/global/hybrid/mix.
+  - With filters provided, returned chunks all satisfy constraints across naive/local/global/hybrid/mix. — DONE
 
-Phase 3 — Qdrant server-side filtering for chunks
-1. Extend `QdrantVectorDBStorage.query` to accept optional `tag_equals` and `tag_in`.
-2. Build `models.Filter(must=[...])` using `tags.<key>` path and `MatchValue/MatchAny`.
-3. Keep client-side filter as safety (in case of legacy payloads missing tags).
+Phase 3 — Qdrant server-side filtering for chunks — DONE
+1. Extend `QdrantVectorDBStorage.query` to accept optional `tag_equals` and `tag_in`. — DONE
+2. Build `models.Filter(must=[...])` using `tags.<key>` path and `MatchValue/MatchAny`. — DONE
+3. Keep client-side filter as safety (in case of legacy payloads missing tags). — DONE
+   - `_get_vector_context` now passes `tag_equals/tag_in` to vector DB when supported, with fallback for other backends.
 4. Acceptance:
-   - When filters are provided, Qdrant limits candidates by payload; fewer items scanned; results still pass client check.
+   - When filters are provided, Qdrant limits candidates by payload; fewer items scanned; results still pass client check. — DONE
 
-Phase 4 — Entities/Relations tagging & pre-filter
+Phase 4 — Entities/Relations tagging & pre-filter — TODO
 1. On entity/relation upsert (existing creation/edit paths), compute aggregated TagMap from associated chunk ids (union of string values; for list values use union of elements); store:
-   - Vector payload: `tags`
-   - Graph: `tags_json` string
-2. Add `"tags"` to `entities_vdb` and `relationships_vdb` meta_fields.
-3. In `_get_node_data` / `_get_edge_data`, pass tag filters to vector query when supported; otherwise filter candidates post-retrieval by their `tags`.
+   - Vector payload: `tags` — TODO
+   - Graph: `tags_json` string — TODO
+2. Add "tags" to `entities_vdb` and `relationships_vdb` meta_fields. — TODO
+3. In `_get_node_data` / `_get_edge_data`, pass tag filters to vector query when supported; otherwise filter candidates post-retrieval by their `tags`. — TODO
 4. Acceptance:
-   - Entity/Relation vector results respect filters; final chunk context remains strictly filtered.
+   - Entity/Relation vector results respect filters; final chunk context remains strictly filtered. — TODO
 
-Phase 5 — Tests & docs
-1. Unit tests for `matches_tag_filters`.
-2. Integration tests with Qdrant verifying server-side filter for chunks.
-3. Mode coverage tests: naive/local/global/hybrid/mix with tag filters.
-4. Update README with insert/query examples including tags.
+Phase 5 — Tests & docs — PARTIAL
+1. Unit tests for `matches_tag_filters`. — DONE
+2. Integration tests with Qdrant verifying server-side filter for chunks. — TODO
+3. Mode coverage tests: naive/local/global/hybrid/mix with tag filters. — DONE (client-side)
+4. Update README with insert/query examples including tags. — TODO
 
 ### Backward compatibility & migration
 - No migration required. Rows without tags remain queryable when no filters are provided.

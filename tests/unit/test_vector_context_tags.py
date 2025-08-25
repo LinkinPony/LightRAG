@@ -5,7 +5,6 @@ from lightrag.operate import _get_vector_context
 
 
 @pytest.mark.unit
-@pytest.mark.xfail(reason="Client-side tag filtering not implemented yet", strict=False)
 @pytest.mark.asyncio
 async def test__get_vector_context_applies_tag_filters(lightrag_instance):
     """

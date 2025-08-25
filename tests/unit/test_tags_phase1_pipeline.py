@@ -4,7 +4,6 @@ from lightrag.base import DocStatus
 
 
 @pytest.mark.unit
-@pytest.mark.xfail(reason="Tag Plan C Phase 1 not implemented yet", strict=False)
 @pytest.mark.asyncio
 async def test_pipeline_enqueue_and_process_propagates_tags(lightrag_instance):
     """
@@ -20,7 +19,7 @@ async def test_pipeline_enqueue_and_process_propagates_tags(lightrag_instance):
     tags = {"project": "alpha", "region": ["us", "eu"]}
 
     # The following should be supported after Phase 1 implementation
-    track_id = await rag.apipeline_enqueue_documents(texts, file_paths=["a.txt"], track_id=None)  # noqa: E501
+    track_id = await rag.apipeline_enqueue_documents(texts, file_paths=["a.txt"], track_id=None, tags=tags)  # noqa: E501
     assert isinstance(track_id, str)
 
     # Process
@@ -28,13 +27,15 @@ async def test_pipeline_enqueue_and_process_propagates_tags(lightrag_instance):
     await initialize_pipeline_status()
     await rag.apipeline_process_enqueue_documents()
 
-    # Find processed doc
-    processed = await rag.doc_status.get_docs_by_status(DocStatus.PROCESSED)
-    assert len(processed) >= 1
-    doc_id, status = next(iter(processed.items()))
+    # Retrieve processed doc(s) by our track_id to avoid mixing with other tests
+    by_track = await rag.doc_status.get_docs_by_track_id(track_id)
+    assert len(by_track) >= 1
+    # Only consider those that are PROCESSED
+    processed_for_track = {k: v for k, v in by_track.items() if v.status == DocStatus.PROCESSED}
+    assert len(processed_for_track) >= 1
+    doc_id, status = next(iter(processed_for_track.items()))
 
     # tags must be persisted on doc_status metadata
-    # EXPECTED AFTER PHASE 1: status.metadata["tags"] == tags
     assert hasattr(status, "metadata")
     assert isinstance(status.metadata, dict)
     assert status.metadata.get("tags") == tags

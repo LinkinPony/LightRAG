@@ -612,6 +612,73 @@ def priority_limit_async_func_call(max_size: int, max_queue_size: int = 1000):
     return final_decro
 
 
+# Tag Plan C - Phase 2 utility
+def matches_tag_filters(tags: dict[str, Any] | None, tag_equals: dict[str, str] | None, tag_in: dict[str, list[str]] | None) -> bool:
+    """Return True if tags satisfy tag_equals and tag_in constraints.
+
+    Semantics:
+    - AND across keys within each dict.
+    - Both groups apply with AND.
+    - If a key appears in both, both constraints must hold.
+    - Missing keys => no match.
+    Supported tag values: str or list[str].
+    Empty filters mean allow all.
+    """
+    if tags is None:
+        tags = {}
+    tag_equals = tag_equals or {}
+    tag_in = tag_in or {}
+
+    # Fast path: no constraints
+    if not tag_equals and not tag_in:
+        return True
+
+    # Helper to check membership for a single key
+    def value_contains(container: Any, expected_values: list[str]) -> bool:
+        if container is None:
+            return False
+        if isinstance(container, str):
+            return container in expected_values
+        if isinstance(container, list):
+            # ensure all list items are strings
+            return any(isinstance(v, str) and v in expected_values for v in container)
+        return False
+
+    # Check equals constraints
+    for key, expected in tag_equals.items():
+        if key not in tags:
+            return False
+        actual = tags.get(key)
+        if isinstance(actual, list):
+            if expected not in actual:
+                return False
+        elif isinstance(actual, str):
+            if actual != expected:
+                return False
+        else:
+            return False
+
+    # Check any-of constraints
+    for key, candidates in tag_in.items():
+        if key not in tags:
+            return False
+        actual = tags.get(key)
+        if not value_contains(actual, candidates):
+            return False
+
+    # Additional constraint when the same key appears in both equals and in:
+    # The equals expected value must be contained in the corresponding in-list.
+    # This narrows the semantics explicitly per spec.
+    if tag_equals and tag_in:
+        for key, expected in tag_equals.items():
+            if key in tag_in:
+                candidate_list = tag_in.get(key) or []
+                if expected not in candidate_list:
+                    return False
+
+    return True
+
+
 def wrap_embedding_func_with_attrs(**kwargs):
     """Wrap a function with attributes"""
 

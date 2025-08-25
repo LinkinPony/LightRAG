@@ -14,6 +14,7 @@ from .utils import (
     clean_str,
     compute_mdhash_id,
     Tokenizer,
+    matches_tag_filters,
     is_float_regex,
     normalize_extracted_info,
     pack_user_ass_to_openai_messages,
@@ -1188,6 +1189,7 @@ async def merge_nodes_and_edges(
     entity_vdb: BaseVectorStorage,
     relationships_vdb: BaseVectorStorage,
     global_config: dict[str, str],
+    text_chunks_db: BaseKVStorage,
     full_entities_storage: BaseKVStorage = None,
     full_relations_storage: BaseKVStorage = None,
     doc_id: str = None,
@@ -1211,6 +1213,7 @@ async def merge_nodes_and_edges(
         entity_vdb: Entity vector database
         relationships_vdb: Relationship vector database
         global_config: Global configuration
+        text_chunks_db: Text chunks storage for tag aggregation
         full_entities_storage: Storage for document entity lists
         full_relations_storage: Storage for document relation lists
         doc_id: Document ID for storage indexing
@@ -1249,6 +1252,40 @@ async def merge_nodes_and_edges(
     graph_max_async = global_config.get("llm_model_max_async", 4) * 2
     semaphore = asyncio.Semaphore(graph_max_async)
 
+    async def _aggregate_tags_for_chunk_ids(
+        chunk_ids_list: list[str] | set[str],
+        text_chunks_storage: BaseKVStorage,
+    ) -> dict[str, Any]:
+        """Aggregate tags across chunks into TagMap (str | list[str])."""
+        if not chunk_ids_list:
+            return {}
+        unique_ids = [cid for cid in dict.fromkeys(list(chunk_ids_list)) if cid]
+        chunks = await text_chunks_storage.get_by_ids(unique_ids)
+        aggregated: dict[str, set[str]] = {}
+        for chunk in chunks:
+            if not isinstance(chunk, dict):
+                continue
+            tags = chunk.get("tags")
+            if not isinstance(tags, dict):
+                continue
+            for key, value in tags.items():
+                if key not in aggregated:
+                    aggregated[key] = set()
+                if isinstance(value, str):
+                    if value:
+                        aggregated[key].add(value)
+                elif isinstance(value, list):
+                    for v in value:
+                        if isinstance(v, str) and v:
+                            aggregated[key].add(v)
+        result: dict[str, Any] = {}
+        for key, values in aggregated.items():
+            if len(values) == 1:
+                result[key] = next(iter(values))
+            elif len(values) > 1:
+                result[key] = sorted(values)
+        return result
+
     # ===== Phase 1: Process all entities concurrently =====
     log_message = f"Phase 1: Processing {total_entities_count} entities from {doc_id} (async: {graph_max_async})"
     logger.info(log_message)
@@ -1272,15 +1309,31 @@ async def merge_nodes_and_edges(
                     pipeline_status_lock,
                     llm_response_cache,
                 )
+                # Aggregate tags from chunk IDs and upsert into graph and vector
+                try:
+                    chunk_ids = [cid for cid in entity_data["source_id"].split(GRAPH_FIELD_SEP) if cid]
+                except Exception:
+                    chunk_ids = []
+                aggregated_tags = await _aggregate_tags_for_chunk_ids(chunk_ids, text_chunks_db)
+
+                # Update graph node with tags_json
+                try:
+                    node_with_tags = {**entity_data, "tags_json": json.dumps(aggregated_tags, ensure_ascii=False)}
+                    await knowledge_graph_inst.upsert_node(entity_name, node_data=node_with_tags)
+                except Exception:
+                    pass
+
                 if entity_vdb is not None:
                     data_for_vdb = {
-                        compute_mdhash_id(entity_data["entity_name"], prefix="ent-"): {
-                            "entity_name": entity_data["entity_name"],
-                            "entity_type": entity_data["entity_type"],
-                            "content": f"{entity_data['entity_name']}\n{entity_data['description']}",
-                            "source_id": entity_data["source_id"],
-                            "file_path": entity_data.get("file_path", "unknown_source"),
-                        }
+                        compute_mdhash_id(entity_data["entity_name"], prefix="ent-"):
+                            {
+                                "entity_name": entity_data["entity_name"],
+                                "entity_type": entity_data["entity_type"],
+                                "content": f"{entity_data['entity_name']}\n{entity_data['description']}",
+                                "source_id": entity_data["source_id"],
+                                "file_path": entity_data.get("file_path", "unknown_source"),
+                                "tags": aggregated_tags,
+                            }
                     }
                     await entity_vdb.upsert(data_for_vdb)
                 return entity_data
@@ -1347,6 +1400,19 @@ async def merge_nodes_and_edges(
                 if edge_data is None:
                     return None, []
 
+                # Aggregate tags for relation and persist
+                try:
+                    rel_chunk_ids = [cid for cid in edge_data["source_id"].split(GRAPH_FIELD_SEP) if cid]
+                except Exception:
+                    rel_chunk_ids = []
+                rel_tags = await _aggregate_tags_for_chunk_ids(rel_chunk_ids, text_chunks_db)
+
+                try:
+                    edge_with_tags = {**edge_data, "tags_json": json.dumps(rel_tags, ensure_ascii=False)}
+                    await knowledge_graph_inst.upsert_edge(edge_data["src_id"], edge_data["tgt_id"], edge_data=edge_with_tags)
+                except Exception:
+                    pass
+
                 if relationships_vdb is not None:
                     data_for_vdb = {
                         compute_mdhash_id(
@@ -1359,6 +1425,7 @@ async def merge_nodes_and_edges(
                             "source_id": edge_data["source_id"],
                             "file_path": edge_data.get("file_path", "unknown_source"),
                             "weight": edge_data.get("weight", 1.0),
+                            "tags": rel_tags,
                         }
                     }
                     await relationships_vdb.upsert(data_for_vdb)
@@ -2055,7 +2122,20 @@ async def _get_vector_context(
         # Use chunk_top_k if specified, otherwise fall back to top_k
         search_top_k = query_param.chunk_top_k or query_param.top_k
 
-        results = await chunks_vdb.query(query, top_k=search_top_k, ids=query_param.ids)
+        # Try server-side tag filtering if vector storage supports it (Phase 3)
+        try:
+            results = await chunks_vdb.query(
+                query,
+                top_k=search_top_k,
+                ids=query_param.ids,
+                tag_equals=getattr(query_param, "tag_equals", {}) or None,
+                tag_in=getattr(query_param, "tag_in", {}) or None,
+            )
+        except TypeError:
+            # Fallback for backends that don't accept tag filters
+            results = await chunks_vdb.query(
+                query, top_k=search_top_k, ids=query_param.ids
+            )
         if not results:
             return []
 
@@ -2068,8 +2148,16 @@ async def _get_vector_context(
                     "file_path": result.get("file_path", "unknown_source"),
                     "source_type": "vector",  # Mark the source type
                     "chunk_id": result.get("id"),  # Add chunk_id for deduplication
+                    # propagate tags if present in payload
+                    "tags": result.get("tags"),
                 }
-                valid_chunks.append(chunk_with_metadata)
+                # Client-side tag filtering (Phase 2)
+                if matches_tag_filters(
+                    chunk_with_metadata.get("tags"),
+                    getattr(query_param, "tag_equals", {}),
+                    getattr(query_param, "tag_in", {}),
+                ):
+                    valid_chunks.append(chunk_with_metadata)
 
         logger.info(
             f"Naive query: {len(valid_chunks)} chunks (chunk_top_k: {search_top_k})"
@@ -2628,9 +2716,19 @@ async def _get_node_data(
         f"Query nodes: {query}, top_k: {query_param.top_k}, cosine: {entities_vdb.cosine_better_than_threshold}"
     )
 
-    results = await entities_vdb.query(
-        query, top_k=query_param.top_k, ids=query_param.ids
-    )
+    # Try pass-through tag filters to vector DB (if supported)
+    try:
+        results = await entities_vdb.query(
+            query,
+            top_k=query_param.top_k,
+            ids=query_param.ids,
+            tag_equals=getattr(query_param, "tag_equals", {}) or None,
+            tag_in=getattr(query_param, "tag_in", {}) or None,
+        )
+    except TypeError:
+        results = await entities_vdb.query(
+            query, top_k=query_param.top_k, ids=query_param.ids
+        )
 
     if not len(results):
         return [], []
@@ -2651,16 +2749,33 @@ async def _get_node_data(
     if not all([n is not None for n in node_datas]):
         logger.warning("Some nodes are missing, maybe the storage is damaged")
 
-    node_datas = [
-        {
+    node_datas = []
+    for k, n, d in zip(results, node_datas, node_degrees):
+        if n is None:
+            continue
+        enriched = {
             **n,
             "entity_name": k["entity_name"],
             "rank": d,
             "created_at": k.get("created_at"),
         }
-        for k, n, d in zip(results, node_datas, node_degrees)
-        if n is not None
-    ]
+        # Client-side tag filtering: prefer vector payload tags, else graph tags_json
+        tags_payload = k.get("tags")
+        if tags_payload is None:
+            try:
+                tags_json = n.get("tags_json")
+                if isinstance(tags_json, str):
+                    tags_payload = json.loads(tags_json)
+                elif isinstance(tags_json, dict):
+                    tags_payload = tags_json
+            except Exception:
+                tags_payload = None
+        if matches_tag_filters(
+            tags_payload,
+            getattr(query_param, "tag_equals", {}),
+            getattr(query_param, "tag_in", {}),
+        ):
+            node_datas.append(enriched)
 
     use_relations = await _find_most_related_edges_from_entities(
         node_datas,
@@ -2883,6 +2998,13 @@ async def _find_related_text_unit_from_entities(
             chunk_data_copy = chunk_data.copy()
             chunk_data_copy["source_type"] = "entity"
             chunk_data_copy["chunk_id"] = chunk_id  # Add chunk_id for deduplication
+            # Client-side tag filtering (Phase 2)
+            if not matches_tag_filters(
+                chunk_data_copy.get("tags"),
+                getattr(query_param, "tag_equals", {}),
+                getattr(query_param, "tag_in", {}),
+            ):
+                continue
             result_chunks.append(chunk_data_copy)
 
             # Update chunk tracking if provided
@@ -2906,9 +3028,18 @@ async def _get_edge_data(
         f"Query edges: {keywords}, top_k: {query_param.top_k}, cosine: {relationships_vdb.cosine_better_than_threshold}"
     )
 
-    results = await relationships_vdb.query(
-        keywords, top_k=query_param.top_k, ids=query_param.ids
-    )
+    try:
+        results = await relationships_vdb.query(
+            keywords,
+            top_k=query_param.top_k,
+            ids=query_param.ids,
+            tag_equals=getattr(query_param, "tag_equals", {}) or None,
+            tag_in=getattr(query_param, "tag_in", {}) or None,
+        )
+    except TypeError:
+        results = await relationships_vdb.query(
+            keywords, top_k=query_param.top_k, ids=query_param.ids
+        )
 
     if not len(results):
         return [], []
@@ -2929,6 +3060,24 @@ async def _get_edge_data(
                     f"Edge {pair} missing 'weight' attribute, using default value 1.0"
                 )
                 edge_props["weight"] = 1.0
+
+            # Client-side tag filtering: prefer vector payload tags, else graph tags_json
+            tags_payload = k.get("tags")
+            if tags_payload is None:
+                try:
+                    tags_json = edge_props.get("tags_json")
+                    if isinstance(tags_json, str):
+                        tags_payload = json.loads(tags_json)
+                    elif isinstance(tags_json, dict):
+                        tags_payload = tags_json
+                except Exception:
+                    tags_payload = None
+            if not matches_tag_filters(
+                tags_payload,
+                getattr(query_param, "tag_equals", {}),
+                getattr(query_param, "tag_in", {}),
+            ):
+                continue
 
             # Keep edge data without rank, maintain vector search order
             combined = {
@@ -3180,6 +3329,13 @@ async def _find_related_text_unit_from_relations(
             chunk_data_copy = chunk_data.copy()
             chunk_data_copy["source_type"] = "relationship"
             chunk_data_copy["chunk_id"] = chunk_id  # Add chunk_id for deduplication
+            # Client-side tag filtering (Phase 2)
+            if not matches_tag_filters(
+                chunk_data_copy.get("tags"),
+                getattr(query_param, "tag_equals", {}),
+                getattr(query_param, "tag_in", {}),
+            ):
+                continue
             result_chunks.append(chunk_data_copy)
 
             # Update chunk tracking if provided

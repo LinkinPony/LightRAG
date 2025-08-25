@@ -4,7 +4,6 @@ from lightrag.base import QueryParam
 
 
 @pytest.mark.unit
-@pytest.mark.xfail(reason="QueryParam.tag_equals/tag_in not added yet", strict=False)
 def test_queryparam_has_tag_defaults_fields():
     """
     Phase 2 adds optional fields with defaults:

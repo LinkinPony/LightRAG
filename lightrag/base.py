@@ -162,6 +162,13 @@ class QueryParam:
     Default is True to enable reranking when rerank model is available.
     """
 
+    # Tag Plan C - Phase 2: tag filters
+    tag_equals: dict[str, str] = field(default_factory=dict)
+    """Exact match constraints on tags. AND across keys."""
+
+    tag_in: dict[str, list[str]] = field(default_factory=dict)
+    """Any-of constraints on tags. AND across keys. Combined with tag_equals via AND."""
+
 
 @dataclass
 class StorageNameSpace(ABC):

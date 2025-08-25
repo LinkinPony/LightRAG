@@ -98,6 +98,16 @@ class QueryRequest(BaseModel):
         description="Enable reranking for retrieved text chunks. If True but no rerank model is configured, a warning will be issued. Default is True.",
     )
 
+    # Tag Plan C - Phase 2: expose tag filters
+    tag_equals: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Exact match constraints on tags (AND across keys)",
+    )
+    tag_in: Optional[Dict[str, List[str]]] = Field(
+        default=None,
+        description="Any-of constraints on tags (AND across keys)",
+    )
+
     @field_validator("query", mode="after")
     @classmethod
     def query_strip_after(cls, query: str) -> str:
