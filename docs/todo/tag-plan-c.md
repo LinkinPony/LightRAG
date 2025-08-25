@@ -87,20 +87,21 @@ Phase 3 — Qdrant server-side filtering for chunks — DONE
 4. Acceptance:
    - When filters are provided, Qdrant limits candidates by payload; fewer items scanned; results still pass client check. — DONE
 
-Phase 4 — Entities/Relations tagging & pre-filter — TODO
+Phase 4 — Entities/Relations tagging & pre-filter — DONE
 1. On entity/relation upsert (existing creation/edit paths), compute aggregated TagMap from associated chunk ids (union of string values; for list values use union of elements); store:
-   - Vector payload: `tags` — TODO
-   - Graph: `tags_json` string — TODO
-2. Add "tags" to `entities_vdb` and `relationships_vdb` meta_fields. — TODO
-3. In `_get_node_data` / `_get_edge_data`, pass tag filters to vector query when supported; otherwise filter candidates post-retrieval by their `tags`. — TODO
+   - Vector payload: `tags` — DONE
+   - Graph: `tags_json` string — DONE
+2. Add "tags" to `entities_vdb` and `relationships_vdb` meta_fields. — DONE
+3. In `_get_node_data` / `_get_edge_data`, pass tag filters to vector query when supported (e.g., Qdrant); otherwise filter candidates post-retrieval by their `tags`/`tags_json`. — DONE
 4. Acceptance:
-   - Entity/Relation vector results respect filters; final chunk context remains strictly filtered. — TODO
+   - Entity/Relation vector results respect filters; final chunk context remains strictly filtered. — DONE
 
 Phase 5 — Tests & docs — PARTIAL
 1. Unit tests for `matches_tag_filters`. — DONE
-2. Integration tests with Qdrant verifying server-side filter for chunks. — TODO
-3. Mode coverage tests: naive/local/global/hybrid/mix with tag filters. — DONE (client-side)
-4. Update README with insert/query examples including tags. — TODO
+2. Unit tests for Phase 1 propagation and client-side vector filtering. — DONE
+3. Integration tests with Qdrant verifying server-side filter for chunks/entities/relations. — TODO
+4. Mode coverage tests: naive/local/global/hybrid/mix with tag filters. — DONE (client-side)
+5. Update README with insert/query examples including tags. — TODO
 
 ### Backward compatibility & migration
 - No migration required. Rows without tags remain queryable when no filters are provided.
