@@ -101,3 +101,11 @@ lightrag = ["api/webui/**/*"]
 
 [tool.ruff]
 target-version = "py310"
+
+[tool.pytest.ini_options]
+markers = [
+    "unit: fast unit tests",
+    "integration: tests requiring external services",
+    "slow: long-running tests",
+    "e2e: end-to-end tests",
+]

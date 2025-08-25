@@ -67,6 +67,23 @@ markers =
 - Use `pytest.mark.asyncio` for async tests.
 - Keep event loop usage straightforward; avoid nested loop management.
 - Prefer async fixtures for storage clients.
+- When your code uses background async workers (e.g., functions decorated with `priority_limit_async_func_call`), ensure tests gracefully shut them down in fixture teardowns to prevent warnings like "Task was destroyed but it is pending!" and "Event loop is closed" during pytest loop cleanup. Example:
+
+```python
+# In tests/conftest.py fixture teardown
+try:
+    embedding = getattr(rag, "embedding_func", None)
+    if embedding is not None and hasattr(embedding, "shutdown"):
+        await embedding.shutdown()
+except Exception:
+    pass
+try:
+    llm = getattr(rag, "llm_model_func", None)
+    if llm is not None and hasattr(llm, "shutdown"):
+        await llm.shutdown()
+except Exception:
+    pass
+```
 
 ### Fixtures
 - Centralize shared fixtures in `tests/conftest.py`:
@@ -100,20 +117,18 @@ markers =
 - A failing test must provide a clear reason; use descriptive assertion messages.
 - If a backend is unavailable, integration tests must `skip` rather than `fail`.
 
+### Default-ignored legacy tests
+- By default, pytest will ignore the following legacy/integration helpers to keep the default test run fast and backend-agnostic:
+  - `tests/test_graph_storage.py`
+  - `tests/test_lightrag_ollama_chat.py`
+- To include them explicitly, set the environment variable and run pytest:
+```
+LIGHTRAG_RUN_LEGACY_TESTS=1 pytest -q
+```
+
 ### CI Recommendations
 - Default CI job: run `pytest -m unit -q` and type checks/linters.
 - Optional CI job (nightly or on-demand): run `pytest -m "unit or integration"` when backends are provisioned.
-
-### Tag Plan C – Minimal Must-Have Tests (Checklist)
-Before refactors, add these tests to lock behavior:
-1) Unit: `matches_tag_filters` function
-   - exact equals
-   - in-list
-   - both equals and in-list on same key
-   - missing key should not match
-2) Integration (mocked vector layer): `_get_vector_context` respects `tag_equals`/`tag_in` when chunk payload or KV contains tags.
-3) Integration (KG): entity→chunk projection filters chunks by tags before context assembly.
-4) Qdrant (if available): server-side filter limits candidates; client fallback still enforces correctness.
 
 ### How to Run Tests
 Unit tests only:
