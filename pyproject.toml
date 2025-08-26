@@ -80,6 +80,7 @@ api = [
 [project.scripts]
 lightrag-server = "lightrag.api.lightrag_server:main"
 lightrag-gunicorn = "lightrag.api.run_with_gunicorn:main"
+lightrag-server-dev = "lightrag.api.lightrag_server_dev:main"
 
 [project.urls]
 Homepage = "https://github.com/HKUDS/LightRAG"

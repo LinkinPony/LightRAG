@@ -1,8 +1,9 @@
-import axios, { AxiosError } from 'axios'
+import axios from 'axios'
 import { backendBaseUrl } from '@/lib/constants'
-import { errorMessage } from '@/lib/utils'
+import { buildInsertPayload, cleanTagMap, errorMessage } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settings'
 import { navigationService } from '@/services/navigation'
+import type { TagEquals, TagIn } from '@/contexts/types'
 
 // Types
 export type LightragNodeType = {
@@ -135,6 +136,10 @@ export type QueryRequest = {
   user_prompt?: string
   /** Enable reranking for retrieved text chunks. If True but no rerank model is configured, a warning will be issued. Default is True. */
   enable_rerank?: boolean
+  /** Tag Plan C: Exact match constraints on tags (AND across keys). */
+  tag_equals?: TagEquals
+  /** Tag Plan C: Any-of constraints on tags (AND across keys). */
+  tag_in?: TagIn
 }
 
 export type QueryResponse = {
@@ -262,7 +267,7 @@ const axiosInstance = axios.create({
 })
 
 // Interceptor: add api key and check authentication
-axiosInstance.interceptors.request.use((config) => {
+axiosInstance.interceptors.request.use((config: any) => {
   const apiKey = useSettingsStore.getState().apiKey
   const token = localStorage.getItem('LIGHTRAG-API-TOKEN');
 
@@ -278,8 +283,8 @@ axiosInstance.interceptors.request.use((config) => {
 
 // Interceptor：hanle error
 axiosInstance.interceptors.response.use(
-  (response) => response,
-  (error: AxiosError) => {
+  (response: any) => response,
+  (error: any) => {
     if (error.response) {
       if (error.response?.status === 401) {
         // For login API, throw error directly
@@ -536,22 +541,35 @@ export const queryTextStream = async (
   }
 };
 
-export const insertText = async (text: string): Promise<DocActionResponse> => {
-  const response = await axiosInstance.post('/documents/text', { text })
+export const insertText = async (
+  text: string,
+  options?: { file_source?: string | null; tags?: Record<string, unknown> }
+): Promise<DocActionResponse> => {
+  const payload = buildInsertPayload({ text, file_source: options?.file_source ?? null, tags: options?.tags })
+  const response = await axiosInstance.post('/documents/text', payload)
   return response.data
 }
 
-export const insertTexts = async (texts: string[]): Promise<DocActionResponse> => {
-  const response = await axiosInstance.post('/documents/texts', { texts })
+export const insertTexts = async (
+  texts: string[],
+  options?: { file_sources?: (string | null)[] | null; tags?: Record<string, unknown> }
+): Promise<DocActionResponse> => {
+  const response = await axiosInstance.post('/documents/texts', buildInsertPayload({ texts, file_sources: (options?.file_sources || undefined) as any, tags: options?.tags }))
   return response.data
 }
 
 export const uploadDocument = async (
   file: File,
-  onUploadProgress?: (percentCompleted: number) => void
+  onUploadProgress?: (percentCompleted: number) => void,
+  options?: { tags?: Record<string, unknown> }
 ): Promise<DocActionResponse> => {
   const formData = new FormData()
   formData.append('file', file)
+  // Optional: include cleaned tags as JSON string if provided
+  const cleaned = cleanTagMap(options?.tags)
+  if (cleaned) {
+    formData.append('tags', JSON.stringify(cleaned))
+  }
 
   const response = await axiosInstance.post('/documents/upload', formData, {
     headers: {
@@ -560,7 +578,7 @@ export const uploadDocument = async (
     // prettier-ignore
     onUploadProgress:
       onUploadProgress !== undefined
-        ? (progressEvent) => {
+        ? (progressEvent: { loaded: number; total?: number | null }) => {
           const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total!)
           onUploadProgress(percentCompleted)
         }
@@ -571,13 +589,14 @@ export const uploadDocument = async (
 
 export const batchUploadDocuments = async (
   files: File[],
-  onUploadProgress?: (fileName: string, percentCompleted: number) => void
+  onUploadProgress?: (fileName: string, percentCompleted: number) => void,
+  options?: { tags?: Record<string, unknown> }
 ): Promise<DocActionResponse[]> => {
   return await Promise.all(
     files.map(async (file) => {
       return await uploadDocument(file, (percentCompleted) => {
         onUploadProgress?.(file.name, percentCompleted)
-      })
+      }, options)
     })
   )
 }

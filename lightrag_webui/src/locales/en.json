@@ -402,6 +402,26 @@
     "placeholder": "Enter your API key",
     "save": "Save"
   },
+  "tags": {
+    "title": "Tags",
+    "insert": {
+      "title": "Insert Tags"
+    },
+    "filter": {
+      "equals": "Tag Equals",
+      "in": "Tag In"
+    },
+    "key": "Key",
+    "value": "Value",
+    "addKey": "Add key",
+    "addValue": "Add value",
+    "remove": "Remove",
+    "clear": "Clear",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "invalidKey": "Key cannot be empty",
+    "invalidValue": "Value cannot be empty"
+  },
   "pagination": {
     "showing": "Showing {{start}} to {{end}} of {{total}} entries",
     "page": "Page",

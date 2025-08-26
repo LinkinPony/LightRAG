@@ -13,6 +13,8 @@ import FileUploader from '@/components/ui/FileUploader'
 import { toast } from 'sonner'
 import { errorMessage } from '@/lib/utils'
 import { uploadDocument } from '@/api/lightrag'
+import TagsEditor from '@/components/ui/TagsEditor'
+import type { TagMap } from '@/contexts/types'
 
 import { UploadIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -27,6 +29,8 @@ export default function UploadDocumentsDialog({ onDocumentsUploaded }: UploadDoc
   const [isUploading, setIsUploading] = useState(false)
   const [progresses, setProgresses] = useState<Record<string, number>>({})
   const [fileErrors, setFileErrors] = useState<Record<string, string>>({})
+  const [showTags, setShowTags] = useState(false)
+  const [tags, setTags] = useState<TagMap | undefined>(undefined)
 
   const handleRejectedFiles = useCallback(
     (rejectedFiles: FileRejection[]) => {
@@ -101,7 +105,7 @@ export default function UploadDocumentsDialog({ onDocumentsUploaded }: UploadDoc
                 ...pre,
                 [file.name]: percentCompleted
               }))
-            })
+            }, { tags })
 
             if (result.status === 'duplicated') {
               uploadErrors[file.name] = t('documentPanel.uploadDocuments.fileUploader.duplicateFile')
@@ -204,6 +208,21 @@ export default function UploadDocumentsDialog({ onDocumentsUploaded }: UploadDoc
             {t('documentPanel.uploadDocuments.description')}
           </DialogDescription>
         </DialogHeader>
+        <div className="mb-3 space-y-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowTags((v) => !v)}
+            disabled={isUploading}
+          >
+            {showTags ? t('tags.collapse') : t('tags.insert.title')}
+          </Button>
+          {showTags && (
+            <div className="border rounded-md p-3">
+              <TagsEditor value={tags} onChange={setTags} />
+            </div>
+          )}
+        </div>
         <FileUploader
           maxFileCount={Infinity}
           maxSize={200 * 1024 * 1024}

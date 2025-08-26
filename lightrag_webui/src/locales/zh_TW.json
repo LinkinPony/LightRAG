@@ -402,6 +402,21 @@
     "placeholder": "請輸入 API key",
     "save": "儲存"
   },
+  "tags": {
+    "title": "標籤",
+    "insert": { "title": "插入標籤" },
+    "filter": { "equals": "等值篩選", "in": "包含篩選" },
+    "key": "鍵",
+    "value": "值",
+    "addKey": "新增鍵",
+    "addValue": "新增值",
+    "remove": "移除",
+    "clear": "清空",
+    "collapse": "收起",
+    "expand": "展開",
+    "invalidKey": "鍵不能為空",
+    "invalidValue": "值不能為空"
+  },
   "pagination": {
     "showing": "顯示第 {{start}} 到 {{end}} 筆，共 {{total}} 筆記錄",
     "page": "頁",

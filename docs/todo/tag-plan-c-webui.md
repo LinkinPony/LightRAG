@@ -50,6 +50,12 @@ export type QueryParam = {
 };
 ```
 
+已实现（Stage A）：
+- 类型定义已落地在 `lightrag_webui/src/contexts/types.ts`，导出 `TagMap`、`TagEquals`、`TagIn`、`InsertPayload`、`QueryParam`。
+- 输入清洗与构造工具已实现于 `lightrag_webui/src/lib/utils.ts`：
+  - 清洗：`cleanTagMap`、`cleanTagEquals`、`cleanTagIn`
+  - 构造：`buildInsertPayload`（插入请求体，仅在非空时包含字段），`buildQueryParams`（查询参数，仅在非空时包含 `tag_equals`/`tag_in`）
+
 输入清洗规则（在提交请求前统一应用）：
 - 去除 key 的首尾空白；空 key 丢弃。
 - 对值进行去空白；空字符串值丢弃。
@@ -66,6 +72,14 @@ export type QueryParam = {
 - 检索/对话接口：在 QueryParam 中新增可选 `tag_equals`、`tag_in`，遵循“仅在非空时发送”。
 - 图谱相关接口（若存在独立入口）：同样支持透传 `tag_equals`、`tag_in`。
 - 返回值展示：若响应中存在 `tags` 或 `tags_json`，在 UI 进行只读展示；缺省则不展示。
+
+已实现（Stage A）：
+- 位置：`lightrag_webui/src/api/lightrag.ts`
+  - `QueryRequest` 新增可选字段：`tag_equals?: TagEquals`、`tag_in?: TagIn`
+  - 插入接口：
+    - `insertText(text, { file_source?, tags? })` 使用 `buildInsertPayload` 构造，仅在非空时发送 `file_source`/`tags`
+    - `insertTexts(texts, { file_sources?, tags? })` 同上，`file_sources` 会在清洗后为空则忽略
+  - 流式与非流式查询均直接透传 `QueryRequest`，由 `buildQueryParams` 决定是否包含 `tag_equals`/`tag_in`
 
 示例（插入）：
 
@@ -182,6 +196,20 @@ export type QueryParam = {
 - 交付物：类型定义、API 调用更新、清洗函数及单测（如有测试框架）。
 - 验收（DoD）：
   - 构造含/不含 `tags`/`tag_equals`/`tag_in` 的请求体，网络面板中字段行为符合“仅在非空时发送”。
+
+完成情况（已落地）：
+- 类型：`lightrag_webui/src/contexts/types.ts`
+- 工具：`lightrag_webui/src/lib/utils.ts`
+  - `cleanTagMap`、`cleanTagEquals`、`cleanTagIn`
+  - `buildInsertPayload`、`buildQueryParams`
+- API：`lightrag_webui/src/api/lightrag.ts`
+  - `QueryRequest` 扩展 `tag_equals`、`tag_in`
+  - `insertText`/`insertTexts` 接口支持可选 `tags`、`file_source(s)`，并遵循仅在非空时发送
+- 前端单测（Bun）：
+  - 测试文件：`lightrag_webui/src/lib/tags-utils.test.ts`
+  - 运行：进入 `lightrag_webui/`，执行 `bun test`
+  - 脚本：`package.json` 增加 `"test": "bun test --bail --timeout=20000"`
+  - 说明：若本地未安装 Bun，可参考安装后再运行。
 
 ### 阶段 B：通用组件
 - 任务：实现 `TagsEditor.tsx`、`TagFilterEditor.tsx`（含基础样式与交互）。

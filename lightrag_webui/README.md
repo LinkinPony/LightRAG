@@ -28,9 +28,19 @@ LightRAG WebUI is a React-based web interface for interacting with the LightRAG 
 
 ## Development
 
-- **Start the Development Server:**
+- **Full-stack Dev (backend reload + Vite dev server):**
 
-  If you want to run the WebUI in development mode, use the following command:
+  After installing the package (editable install recommended), you can launch the backend with reload and the Vite dev server together:
+
+  ```bash
+  lightrag-server-dev
+  ```
+
+  - Backend: uvicorn reload using `lightrag.api.lightrag_server:get_application`
+  - Frontend: Vite dev server (bun if available, otherwise npm) with API proxy to the backend
+  - Open `http://localhost:5173/webui` during development
+
+- **Start the Development Server (WebUI only):**
 
   ```bash
   bun run dev

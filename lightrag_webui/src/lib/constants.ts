@@ -1,6 +1,8 @@
 import { ButtonVariantType } from '@/components/ui/Button'
 
-export const backendBaseUrl = ''
+// In dev, allow overriding backend base URL via Vite env to avoid relying on Vite proxy
+// Production build leaves it empty string to use same-origin
+export const backendBaseUrl = (import.meta as any)?.env?.VITE_BACKEND_URL || ''
 export const webuiPrefix = '/webui/'
 
 export const controlButtonVariant: ButtonVariantType = 'ghost'

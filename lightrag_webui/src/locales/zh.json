@@ -402,6 +402,26 @@
     "placeholder": "请输入 API Key",
     "save": "保存"
   },
+  "tags": {
+    "title": "标签",
+    "insert": {
+      "title": "插入标签"
+    },
+    "filter": {
+      "equals": "等值过滤",
+      "in": "包含过滤"
+    },
+    "key": "键",
+    "value": "值",
+    "addKey": "添加键",
+    "addValue": "添加值",
+    "remove": "移除",
+    "clear": "清空",
+    "collapse": "收起",
+    "expand": "展开",
+    "invalidKey": "键不能为空",
+    "invalidValue": "值不能为空"
+  },
   "pagination": {
     "showing": "显示第 {{start}} 到 {{end}} 条，共 {{total}} 条记录",
     "page": "页",

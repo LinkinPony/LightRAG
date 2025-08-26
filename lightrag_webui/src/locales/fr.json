@@ -402,6 +402,21 @@
     "placeholder": "Entrez votre clé API",
     "save": "Sauvegarder"
   },
+  "tags": {
+    "title": "Tags",
+    "insert": { "title": "Insérer des tags" },
+    "filter": { "equals": "Égalité de tag", "in": "Tag dans" },
+    "key": "Clé",
+    "value": "Valeur",
+    "addKey": "Ajouter une clé",
+    "addValue": "Ajouter une valeur",
+    "remove": "Supprimer",
+    "clear": "Effacer",
+    "collapse": "Réduire",
+    "expand": "Développer",
+    "invalidKey": "La clé ne peut pas être vide",
+    "invalidValue": "La valeur ne peut pas être vide"
+  },
   "pagination": {
     "showing": "Affichage de {{start}} à {{end}} sur {{total}} entrées",
     "page": "Page",
