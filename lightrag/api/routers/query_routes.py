@@ -196,26 +196,31 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
         """
         try:
             param = request.to_query_params(True)
-            response = await rag.aquery(request.query, param=param)
 
             from fastapi.responses import StreamingResponse
 
             async def stream_generator():
-                if isinstance(response, str):
-                    # If it's a string, send it all at once
-                    yield f"{json.dumps({'response': response})}\n"
-                elif response is None:
-                    # Handle None response (e.g., when only_need_context=True but no context found)
-                    yield f"{json.dumps({'response': 'No relevant context found for the query.'})}\n"
-                else:
-                    # If it's an async generator, send chunks one by one
-                    try:
-                        async for chunk in response:
-                            if chunk:  # Only send non-empty content
-                                yield f"{json.dumps({'response': chunk})}\n"
-                    except Exception as e:
-                        logging.error(f"Streaming error: {str(e)}")
-                        yield f"{json.dumps({'error': str(e)})}\n"
+                try:
+                    response = await rag.aquery(request.query, param=param)
+                    if isinstance(response, str):
+                        # If it's a string, send it all at once
+                        yield f"{json.dumps({'response': response})}\n"
+                    elif response is None:
+                        # Handle None response (e.g., when only_need_context=True but no context found)
+                        yield f"{json.dumps({'response': 'No relevant context found for the query.'})}\n"
+                    else:
+                        # If it's an async generator, send chunks one by one
+                        try:
+                            async for chunk in response:
+                                if chunk:  # Only send non-empty content
+                                    yield f"{json.dumps({'response': chunk})}\n"
+                        except Exception as e:
+                            logging.error(f"Streaming error: {str(e)}")
+                            yield f"{json.dumps({'error': str(e)})}\n"
+                except Exception as e:
+                    # Convert pre-stream errors into a graceful NDJSON error line
+                    logging.error(f"Streaming setup error: {str(e)}")
+                    yield f"{json.dumps({'error': str(e)})}\n"
 
             return StreamingResponse(
                 stream_generator(),

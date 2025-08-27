@@ -246,7 +246,9 @@ const fetchGraph = async (label: string, maxDepth: number, maxNodes: number) => 
 
   try {
     console.log(`Fetching graph label: ${queryLabel}, depth: ${maxDepth}, nodes: ${maxNodes}`);
-    rawData = await queryGraphs(queryLabel, maxDepth, maxNodes);
+    const graphTagEquals = useSettingsStore.getState().graphTagEquals;
+    const graphTagIn = useSettingsStore.getState().graphTagIn;
+    rawData = await queryGraphs(queryLabel, maxDepth, maxNodes, { tag_equals: graphTagEquals, tag_in: graphTagIn });
   } catch (e) {
     useBackendState.getState().setErrorMessage(errorMessage(e), 'Query Graphs Error!');
     return null;
@@ -620,7 +622,9 @@ const useLightrangeGraph = () => {
         }
 
         // Fetch the extended subgraph with depth 2
-        const extendedGraph = await queryGraphs(label, 2, 1000);
+        const graphTagEquals = useSettingsStore.getState().graphTagEquals;
+        const graphTagIn = useSettingsStore.getState().graphTagIn;
+        const extendedGraph = await queryGraphs(label, 2, 1000, { tag_equals: graphTagEquals, tag_in: graphTagIn });
 
         if (!extendedGraph || !extendedGraph.nodes || !extendedGraph.edges) {
           console.error('Failed to fetch extended graph');

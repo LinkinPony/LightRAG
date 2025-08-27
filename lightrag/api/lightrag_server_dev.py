@@ -5,6 +5,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib import request as _urlrequest
+from urllib.error import URLError as _URLError
 
 from . import lightrag_server as server
 from fastapi import FastAPI
@@ -57,12 +59,45 @@ def _start_frontend_dev(backend_host: str, backend_port: int) -> subprocess.Pope
     env["VITE_BACKEND_URL"] = backend_url
     env["VITE_API_PROXY"] = "true"
     # Include all endpoints used by the WebUI so auth/login and others are proxied in dev
-    env["VITE_API_ENDPOINTS"] = "/api,/docs,/openapi.json,/auth-status,/login,/health,/documents,/graph"
+    # Added missing endpoints: /query, /query/stream, /graphs
+    env["VITE_API_ENDPOINTS"] = ",".join(
+        [
+            "/api",
+            "/docs",
+            "/openapi.json",
+            "/auth-status",
+            "/login",
+            "/health",
+            "/documents",
+            "/graph",
+            "/graphs",
+            "/query",
+            "/query/stream",
+        ]
+    )
 
     # Start the dev server
     _print(f"Starting WebUI dev server in {webui_dir} using: {' '.join(cmd)}")
     proc = subprocess.Popen(cmd, cwd=str(webui_dir), env=env)
     return proc
+
+
+def _wait_for_vite_ready(vite_url: str, timeout_seconds: float = 60.0) -> None:
+    """Poll Vite dev server until it's accepting connections (best-effort)."""
+    start = time.time()
+    check_url = f"{vite_url.rstrip('/')}/webui/"
+    last_error = None
+    while time.time() - start < timeout_seconds:
+        try:
+            with _urlrequest.urlopen(check_url, timeout=2) as resp:  # nosec B310
+                if 200 <= getattr(resp, "status", 200) < 500:
+                    return
+        except _URLError as e:
+            last_error = e
+        except Exception as e:  # pragma: no cover - best-effort wait
+            last_error = e
+        time.sleep(0.2)
+    _print(f"Warning: Vite dev server not ready after {int(timeout_seconds)}s: {last_error}")
 
 
 def _override_webui_mount(app: FastAPI, vite_url: str) -> None:
@@ -105,18 +140,49 @@ def get_dev_application() -> FastAPI:
     return app
 
 
-def _start_backend_dev() -> None:
-    import uvicorn
-
-    # Use import string + factory to allow reload
-    uvicorn.run(
+def _start_backend_dev_proc() -> subprocess.Popen:
+    """Start uvicorn in a child process with reload, so we can start FE after BE is ready."""
+    backend_src_dir = Path(__file__).resolve().parents[1]  # lightrag/
+    host = server.global_args.host
+    port = server.global_args.port
+    cmd = [
+        sys.executable,
+        "-m",
+        "uvicorn",
         "lightrag.api.lightrag_server_dev:get_dev_application",
-        host=server.global_args.host,
-        port=server.global_args.port,
-        reload=True,
-        factory=True,
-        log_config=None,
-    )
+        "--host",
+        str(host),
+        "--port",
+        str(port),
+        "--reload",
+        "--factory",
+        "--reload-dir",
+        str(backend_src_dir),
+    ]
+    env = os.environ.copy()
+    # Ensure consistent PYTHONPATH to resolve local package imports when launched via -m
+    repo_root = Path(__file__).resolve().parents[2]
+    env["PYTHONPATH"] = (str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")) if env.get("PYTHONPATH") else str(repo_root)
+    return subprocess.Popen(cmd, cwd=str(repo_root), env=env)
+
+
+def _wait_for_backend_ready(backend_host: str, backend_port: int, timeout_seconds: float = 60.0) -> None:
+    """Wait until backend /health responds OK to reduce Vite proxy 500/ECONNREFUSED at startup."""
+    start = time.time()
+    host_for_check = "localhost" if backend_host in ("0.0.0.0", "::", "") else backend_host
+    url = f"http://{host_for_check}:{backend_port}/health"
+    last_error = None
+    while time.time() - start < timeout_seconds:
+        try:
+            with _urlrequest.urlopen(url, timeout=2) as resp:  # nosec B310
+                if 200 <= getattr(resp, "status", 200) < 300:
+                    return
+        except _URLError as e:
+            last_error = e
+        except Exception as e:  # pragma: no cover
+            last_error = e
+        time.sleep(0.2)
+    _print(f"Warning: Backend not healthy after {int(timeout_seconds)}s: {last_error}")
 
 
 def main() -> None:
@@ -125,8 +191,23 @@ def main() -> None:
     backend_host = server.global_args.host
     backend_port = server.global_args.port
 
-    # Start frontend dev server
+    # Start backend first (as a child process) and wait for readiness
+    be_proc = _start_backend_dev_proc()
+    # Ensure backend embeds the correct Vite URL
+    if "DEV_VITE_URL" not in os.environ:
+        os.environ["DEV_VITE_URL"] = "http://localhost:5173"
+    _wait_for_backend_ready(backend_host, backend_port)
+
+    # Then start frontend dev server
     fe_proc = _start_frontend_dev(backend_host, backend_port)
+
+    # Ensure backend embeds the correct Vite URL
+    if "DEV_VITE_URL" not in os.environ:
+        os.environ["DEV_VITE_URL"] = "http://localhost:5173"
+
+    # Best-effort: wait until Vite dev server is accepting connections to reduce transient
+    # "refused to connect" when visiting /webui immediately after startup.
+    _wait_for_vite_ready(os.environ["DEV_VITE_URL"]) 
 
     # Make sure we terminate the FE dev server when backend exits
     def _terminate_child(*_args):
@@ -145,6 +226,19 @@ def main() -> None:
         except Exception:
             pass
 
+        try:
+            if be_proc.poll() is None:
+                _print("Stopping backend dev server ...")
+                be_proc.send_signal(signal.SIGINT)
+                for _ in range(50):  # ~5s
+                    if be_proc.poll() is not None:
+                        break
+                    time.sleep(0.1)
+                if be_proc.poll() is None:
+                    be_proc.kill()
+        except Exception:
+            pass
+
     # Register handlers to stop child on termination
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_args: (_terminate_child(), sys.exit(0)))
@@ -158,7 +252,8 @@ def main() -> None:
     _print("============================================================\n")
 
     try:
-        _start_backend_dev()
+        # Block on backend process
+        be_proc.wait()
     finally:
         _terminate_child()
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
-import { Separator } from '@/components/ui/Separator'
+import Separator from '@/components/ui/Separator'
 import type { TagEquals, TagIn } from '@/contexts/types'
 
 type EqEntry = { key: string; value: string }

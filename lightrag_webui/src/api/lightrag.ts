@@ -311,9 +311,26 @@ axiosInstance.interceptors.response.use(
 export const queryGraphs = async (
   label: string,
   maxDepth: number,
-  maxNodes: number
+  maxNodes: number,
+  options?: { tag_equals?: TagEquals; tag_in?: TagIn }
 ): Promise<LightragGraphType> => {
-  const response = await axiosInstance.get(`/graphs?label=${encodeURIComponent(label)}&max_depth=${maxDepth}&max_nodes=${maxNodes}`)
+  // Build params, only include tag filters when provided
+  const params: Record<string, any> = {
+    label,
+    max_depth: maxDepth,
+    max_nodes: maxNodes,
+  }
+  if (options?.tag_equals && Object.keys(options.tag_equals).length) params.tag_equals = options.tag_equals
+  if (options?.tag_in && Object.keys(options.tag_in).length) params.tag_in = options.tag_in
+  const search = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (typeof v === 'object') {
+      search.append(k, JSON.stringify(v))
+    } else {
+      search.append(k, String(v))
+    }
+  }
+  const response = await axiosInstance.get(`/graphs?${search.toString()}`)
   return response.data
 }
 

@@ -47,6 +47,10 @@ interface SettingsState {
   graphLayoutMaxIterations: number
   setGraphLayoutMaxIterations: (iterations: number) => void
 
+  // Tag Plan C filters for graph queries (optional)
+  graphTagEquals?: Record<string, string>
+  graphTagIn?: Record<string, string[]>
+
   // Retrieval settings
   queryLabel: string
   setQueryLabel: (queryLabel: string) => void
@@ -99,6 +103,10 @@ const useSettingsStoreBase = create<SettingsState>()(
       backendMaxGraphNodes: null,
       graphLayoutMaxIterations: 15,
 
+      // Graph tag filters (persisted)
+      graphTagEquals: undefined,
+      graphTagIn: undefined,
+
       queryLabel: defaultQueryLabel,
 
       enableHealthCheck: true,
@@ -144,6 +152,10 @@ const useSettingsStoreBase = create<SettingsState>()(
           graphLayoutMaxIterations: iterations
         }),
 
+      // Update graph tag filters
+      // Clean empty objects to undefined for minimal payload semantics
+      
+
       setQueryLabel: (queryLabel: string) =>
         set({
           queryLabel
@@ -178,6 +190,10 @@ const useSettingsStoreBase = create<SettingsState>()(
       setMaxEdgeSize: (size: number) => set({ maxEdgeSize: size }),
 
       setEnableHealthCheck: (enable: boolean) => set({ enableHealthCheck: enable }),
+
+      // Set Graph tag filters helpers
+      setGraphTagEquals: (equals?: Record<string, string>) => set({ graphTagEquals: (equals && Object.keys(equals).length) ? equals : undefined }),
+      setGraphTagIn: (tagIn?: Record<string, string[]>) => set({ graphTagIn: (tagIn && Object.keys(tagIn).length) ? tagIn : undefined }),
 
       setApiKey: (apiKey: string | null) => set({ apiKey }),
 

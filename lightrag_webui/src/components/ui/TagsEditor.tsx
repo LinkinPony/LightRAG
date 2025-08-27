@@ -41,13 +41,34 @@ export default function TagsEditor({
   onChange
 }: {
   value?: TagMap
-  onChange?: (next: TagMap) => void
+  onChange?: (next: TagMap | undefined) => void
 }) {
   const [entries, setEntries] = useState<TagEntry[]>(() => toEntries(value))
 
+  const stringifyNormalized = (map: TagMap | undefined) => {
+    if (!map) return ''
+    const normalized: Record<string, string | string[]> = {}
+    const keys = Object.keys(map).sort()
+    for (const k of keys) {
+      const v = map[k]
+      if (Array.isArray(v)) {
+        normalized[k] = [...v].sort()
+      } else {
+        normalized[k] = v
+      }
+    }
+    return JSON.stringify(normalized)
+  }
+
   const handleSync = (next: TagEntry[]) => {
     setEntries(next)
-    onChange?.(toMap(next))
+    const mapped = toMap(next)
+    const mappedOrUndef = Object.keys(mapped).length > 0 ? mapped : undefined
+    // Avoid triggering parent update if nothing semantically changed
+    const currentNormalized = stringifyNormalized(value)
+    const nextNormalized = stringifyNormalized(mappedOrUndef)
+    if (currentNormalized === nextNormalized) return
+    onChange?.(mappedOrUndef)
   }
 
   const addKey = () => {

@@ -269,7 +269,12 @@ def parse_args() -> argparse.Namespace:
     elif os.environ.get("LLM_BINDING") in ["openai", "azure_openai"]:
         OpenAILLMOptions.add_args(parser)
 
-    args = parser.parse_args()
+    # Use parse_known_args to tolerate extra args injected by uvicorn reloader
+    # (e.g., the application import string). This prevents crashes during import-time
+    # when uvicorn passes positional arguments our CLI doesn't recognize.
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        logging.debug(f"Ignoring unknown CLI args: {unknown}")
 
     # convert relative path to absolute path
     args.working_dir = os.path.abspath(args.working_dir)

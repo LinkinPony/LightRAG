@@ -1,7 +1,7 @@
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { throttle } from '@/lib/utils'
+import { throttle, buildQueryParams } from '@/lib/utils'
 import { queryText, queryTextStream } from '@/api/lightrag'
 import { errorMessage } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settings'
@@ -189,7 +189,7 @@ export default function RetrievalTesting() {
 
       // Prepare query parameters
       const state = useSettingsStore.getState()
-      const queryParams = {
+      const baseParams = {
         ...state.querySettings,
         query: actualQuery,
         conversation_history: prevMessages
@@ -198,6 +198,10 @@ export default function RetrievalTesting() {
           .map((m) => ({ role: m.role, content: m.content })),
         ...(modeOverride ? { mode: modeOverride } : {})
       }
+      const queryParams = buildQueryParams(baseParams, {
+        tag_equals: state.querySettings.tag_equals,
+        tag_in: state.querySettings.tag_in
+      })
 
       try {
         // Run query

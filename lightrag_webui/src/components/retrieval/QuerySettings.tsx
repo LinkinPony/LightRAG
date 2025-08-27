@@ -3,6 +3,7 @@ import { QueryMode, QueryRequest } from '@/api/lightrag'
 // Removed unused import for Text component
 import Checkbox from '@/components/ui/Checkbox'
 import Input from '@/components/ui/Input'
+import TagFilterEditor from '@/components/ui/TagFilterEditor'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import {
   Select,
@@ -39,6 +40,13 @@ export default function QuerySettings() {
   const handleReset = useCallback((key: keyof typeof defaultValues) => {
     handleChange(key, defaultValues[key])
   }, [handleChange, defaultValues])
+
+  const handleTagFiltersChange = useCallback((value: { tag_equals?: QueryRequest['tag_equals']; tag_in?: QueryRequest['tag_in'] }) => {
+    useSettingsStore.getState().updateQuerySettings({
+      tag_equals: value.tag_equals,
+      tag_in: value.tag_in
+    })
+  }, [])
 
   // Reset button component
   const ResetButton = ({ onClick, title }: { onClick: () => void; title: string }) => (
@@ -353,6 +361,21 @@ export default function QuerySettings() {
               </div>
             </>
 
+
+            {/* Tag Filters */}
+            <>
+              <div className="mt-2">
+                <label className="ml-1">
+                  {t('tags.title')}
+                </label>
+                <div className="mt-1">
+                  <TagFilterEditor
+                    value={{ tag_equals: querySettings.tag_equals, tag_in: querySettings.tag_in }}
+                    onChange={handleTagFiltersChange}
+                  />
+                </div>
+              </div>
+            </>
 
             {/* User Prompt */}
             <>

@@ -81,6 +81,9 @@ export type QueryParam = {
     - `insertTexts(texts, { file_sources?, tags? })` 同上，`file_sources` 会在清洗后为空则忽略
   - 流式与非流式查询均直接透传 `QueryRequest`，由 `buildQueryParams` 决定是否包含 `tag_equals`/`tag_in`
 
+新增（与上传相关，向后兼容）：
+- 上传接口：`uploadDocument(file, onUploadProgress?, options?: { tags? })` 与 `batchUploadDocuments(files, onUploadProgress?, options?: { tags? })` 会在 FormData 中可选追加 `tags`（JSON 字符串），仅在非空时发送；当前后端未消费该字段时会被安全忽略。
+
 示例（插入）：
 
 ```json
@@ -166,6 +169,8 @@ export type QueryParam = {
 
 覆盖 `en.json`、`zh.json`、`zh_TW.json`、`fr.json`、`ar.json`。
 
+完成情况（已落地）：已在以上 5 个语言包中补齐 `tags.*` 文案键，按钮与编辑区文案均可正常显示。
+
 ---
 
 ## 7. 校验与容错
@@ -217,11 +222,23 @@ export type QueryParam = {
 - 验收（DoD）：
   - 可添加/删除/编辑键值，切换单值/多值；校验生效；`onChange` 输出结构正确。
 
+完成情况（已落地）：
+- 组件：
+  - `lightrag_webui/src/components/ui/TagsEditor.tsx`（编辑 `TagMap`，支持单值/多值切换、键/值增删、基础清洗）
+  - `lightrag_webui/src/components/ui/TagFilterEditor.tsx`（同时编辑 `tag_equals`/`tag_in`，键/值行增删）
+- 说明：基础样式与交互已实现，可直接集成到表单与设置面板。
+
 ### 阶段 C：文档插入集成
 - 任务：在上传/插入表单中集成 `TagsEditor`，提交时透传清洗后的 `tags`。
 - 交付物：表单改造、与 API 的打通。
 - 验收（DoD）：
   - 插入成功；后续检索中可在返回的 chunk/详情里看到标签展示（若后端返回）。
+
+完成情况（已落地）：
+- 上传对话框集成：`lightrag_webui/src/components/documents/UploadDocumentsDialog.tsx`
+  - 在文件选择区域上方新增“插入标签/收起”开关，展开后为 `TagsEditor` 编辑区
+  - 提交上传时，通过 `uploadDocument(..., { tags })` 透传清洗后的 `tags`
+- API 扩展：`lightrag_webui/src/api/lightrag.ts` 新增 `uploadDocument`/`batchUploadDocuments` 的可选 `tags` 透传逻辑（FormData JSON），仅在非空时发送
 
 ### 阶段 D：检索过滤集成
 - 任务：在 `QuerySettings.tsx` 集成 `TagFilterEditor`，将输出并入 QueryParam。
@@ -229,11 +246,34 @@ export type QueryParam = {
 - 验收（DoD）：
   - 设置过滤后，检索结果上下文符合预期；清空过滤后恢复无过滤状态。
 
+完成情况（已落地）：
+- 检索设置集成：`lightrag_webui/src/components/retrieval/QuerySettings.tsx`
+  - 嵌入 `TagFilterEditor`；与 `useSettingsStore().querySettings` 的 `tag_equals`/`tag_in` 双向绑定
+- 参数透传与构建：
+  - `lightrag_webui/src/features/RetrievalTesting.tsx` 使用 `buildQueryParams(...)` 仅在非空时附加 `tag_equals`/`tag_in`
+  - `lightrag_webui/src/lib/utils.ts` 将 `buildQueryParams` 泛型化，返回与基础参数同型的对象并按需附加过滤字段
+
 ### 阶段 E：图谱筛选与展示
 - 任务：在图谱视图增加过滤项透传；节点/边详情展示 `tags`/`tags_json`（若存在）。
 - 交付物：筛选 UI、查询构造更新、详情面板展示。
 - 验收（DoD）：
   - 设置过滤后，实体/关系候选与详情与后端一致；无过滤时行为不变。
+
+完成情况（已落地）：
+- 设置面板新增标签过滤：`lightrag_webui/src/components/graph/Settings.tsx`
+  - 引入 `TagFilterEditor`，编辑并持久化 `graphTagEquals` / `graphTagIn`（存于 `useSettingsStore`）
+  - 变更后通过短暂清空/恢复 `queryLabel` 触发图谱刷新
+- 状态存储：`lightrag_webui/src/stores/settings.ts`
+  - 新增可选字段 `graphTagEquals?: Record<string,string>`、`graphTagIn?: Record<string,string[]>`
+  - 提供 `setGraphTagEquals`、`setGraphTagIn` 方法（空对象会被规范化为 `undefined`）
+- API 透传：`lightrag_webui/src/api/lightrag.ts`
+  - `queryGraphs(label, maxDepth, maxNodes, { tag_equals?, tag_in? })` 支持可选标签过滤
+  - 过滤参数以 JSON 字符串形式写入 QueryString，未提供则不附加对应字段
+- 查询构造与节点扩展：`lightrag_webui/src/hooks/useLightragGraph.tsx`
+  - 首次拉取与“扩展节点”时，从 `useSettingsStore` 读取 `graphTagEquals`/`graphTagIn` 并透传给 `queryGraphs`
+- 详情展示：`lightrag_webui/src/components/graph/PropertiesView.tsx`
+  - 若节点/边属性中存在 `tags` 或 `tags_json`，在属性列表末尾以只读形式追加展示（字符串或 JSON）
+- 向后兼容：后端未消费标签过滤时将安全忽略；无过滤时行为与现状一致
 
 ### 阶段 F：国际化与文档
 - 任务：补齐所有新增文案的多语言；更新 README 或使用指南片段。

@@ -307,6 +307,22 @@ const NodePropertiesView = ({ node }: { node: NodeType }) => {
               />
             )
           })}
+        {(() => {
+          const tags = (node.properties as any)['tags'] || (node.properties as any)['tags_json']
+          if (!tags) return null
+          const display = typeof tags === 'string' ? tags : JSON.stringify(tags)
+          return (
+            <PropertyRow
+              key={'__tags__'}
+              name={'tags'}
+              value={display}
+              nodeId={String(node.id)}
+              entityId={node.properties['entity_id']}
+              entityType="node"
+              isEditable={false}
+            />
+          )
+        })()}
       </div>
       {node.relationships.length > 0 && (
         <>
@@ -376,6 +392,22 @@ const EdgePropertiesView = ({ edge }: { edge: EdgeType }) => {
               />
             )
           })}
+        {(() => {
+          const tags = (edge.properties as any)['tags'] || (edge.properties as any)['tags_json']
+          if (!tags) return null
+          const display = typeof tags === 'string' ? tags : JSON.stringify(tags)
+          return (
+            <PropertyRow
+              key={'__edge_tags__'}
+              name={'tags'}
+              value={display}
+              edgeId={String(edge.id)}
+              dynamicId={String(edge.dynamicId)}
+              entityType="edge"
+              isEditable={false}
+            />
+          )
+        })()}
       </div>
     </div>
   )

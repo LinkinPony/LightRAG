@@ -4,6 +4,7 @@ import Checkbox from '@/components/ui/Checkbox'
 import Button from '@/components/ui/Button'
 import Separator from '@/components/ui/Separator'
 import Input from '@/components/ui/Input'
+import TagFilterEditor from '@/components/ui/TagFilterEditor'
 
 import { controlButtonVariant } from '@/lib/constants'
 import { useSettingsStore } from '@/stores/settings'
@@ -160,6 +161,8 @@ export default function Settings() {
   const graphMaxNodes = useSettingsStore.use.graphMaxNodes()
   const backendMaxGraphNodes = useSettingsStore.use.backendMaxGraphNodes()
   const graphLayoutMaxIterations = useSettingsStore.use.graphLayoutMaxIterations()
+  const graphTagEquals = useSettingsStore.use.graphTagEquals()
+  const graphTagIn = useSettingsStore.use.graphTagIn()
 
   const enableHealthCheck = useSettingsStore.use.enableHealthCheck()
 
@@ -226,6 +229,16 @@ export default function Settings() {
   const setGraphLayoutMaxIterations = useCallback((iterations: number) => {
     if (iterations < 1) return
     useSettingsStore.setState({ graphLayoutMaxIterations: iterations })
+  }, [])
+
+  const setGraphTagFilters = useCallback((next: { tag_equals?: Record<string, string>; tag_in?: Record<string, string[]> }) => {
+    useSettingsStore.getState().setGraphTagEquals(next.tag_equals)
+    useSettingsStore.getState().setGraphTagIn(next.tag_in)
+    const currentLabel = useSettingsStore.getState().queryLabel
+    useSettingsStore.getState().setQueryLabel('')
+    setTimeout(() => {
+      useSettingsStore.getState().setQueryLabel(currentLabel)
+    }, 300)
   }, [])
 
   const { t } = useTranslation();
@@ -376,6 +389,16 @@ export default function Settings() {
               defaultValue={15}
               onEditFinished={setGraphLayoutMaxIterations}
             />
+            <Separator />
+            <div className="flex flex-col gap-2">
+              <label className="text-sm leading-none font-medium">
+                {t('tags.title')}
+              </label>
+              <TagFilterEditor
+                value={{ tag_equals: graphTagEquals, tag_in: graphTagIn }}
+                onChange={setGraphTagFilters}
+              />
+            </div>
             <Separator />
             <Button
               onClick={saveSettings}

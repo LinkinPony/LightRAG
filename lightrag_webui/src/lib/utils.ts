@@ -167,11 +167,11 @@ export function buildInsertPayload(params: {
   return payload
 }
 
-export function buildQueryParams(base: Record<string, any>, tagFilters?: { tag_equals?: unknown; tag_in?: unknown }): QueryParam & Record<string, any> {
+export function buildQueryParams<T extends Record<string, any>>(base: T, tagFilters?: { tag_equals?: unknown; tag_in?: unknown }): T & QueryParam {
   const out: Record<string, any> = { ...base }
   const equals = cleanTagEquals(tagFilters?.tag_equals)
   const inMap = cleanTagIn(tagFilters?.tag_in)
   if (equals) out.tag_equals = equals
   if (inMap) out.tag_in = inMap
-  return out as QueryParam & Record<string, any>
+  return out as T & QueryParam
 }
