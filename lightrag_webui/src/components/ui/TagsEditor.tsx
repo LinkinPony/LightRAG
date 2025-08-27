@@ -4,6 +4,7 @@ import Button from '@/components/ui/Button'
 import Checkbox from '@/components/ui/Checkbox'
 import Separator from '@/components/ui/Separator'
 import type { TagMap } from '@/contexts/types'
+import { useTranslation } from 'react-i18next'
 
 type TagEntry = {
   key: string
@@ -43,6 +44,7 @@ export default function TagsEditor({
   value?: TagMap
   onChange?: (next: TagMap | undefined) => void
 }) {
+  const { t } = useTranslation()
   const [entries, setEntries] = useState<TagEntry[]>(() => toEntries(value))
 
   const stringifyNormalized = (map: TagMap | undefined) => {
@@ -132,27 +134,27 @@ export default function TagsEditor({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="font-medium text-sm">Tags</div>
+        <div className="font-medium text-sm">{t('tags.title')}</div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={addKey}>Add key</Button>
+          <Button size="sm" variant="outline" onClick={addKey}>{t('tags.addKey')}</Button>
           <Button
             size="sm"
             variant="ghost"
             onClick={() => handleSync([])}
           >
-            Clear
+            {t('tags.clear')}
           </Button>
         </div>
       </div>
       <Separator />
       <div className="space-y-3">
         {entries.length === 0 && (
-          <div className="text-xs text-gray-500">No tags. Click "Add key" to start.</div>
+          <div className="text-xs text-gray-500">No tags. {t('tags.addKey')}</div>
         )}
         {entries.map((entry, idx) => (
           <div key={idx} className="border rounded-md p-3 space-y-2">
             <div className="flex items-center gap-2">
-              <div className="text-xs text-gray-500 w-16">Key</div>
+              <div className="text-xs text-gray-500 w-16">{t('tags.key')}</div>
               <Input
                 value={entry.key}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKey(idx, e.target.value)}
@@ -164,30 +166,30 @@ export default function TagsEditor({
                 onCheckedChange={(checked) => toggleMulti(idx, checked === true)}
               />
               <span className="text-xs text-gray-500 select-none">Multiple</span>
-              <Button size="sm" variant="outline" onClick={() => removeKey(idx)}>Remove</Button>
+              <Button size="sm" variant="outline" onClick={() => removeKey(idx)}>{t('tags.remove')}</Button>
             </div>
             <div className="space-y-2">
               {entry.isMulti ? (
                 <div className="space-y-2">
                   {entry.values.map((v, vIdx) => (
                     <div key={vIdx} className="flex items-center gap-2">
-                      <div className="text-xs text-gray-500 w-16">Value</div>
+                      <div className="text-xs text-gray-500 w-16">{t('tags.value')}</div>
                       <Input
                         value={v}
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => setValue(idx, vIdx, e.target.value)}
                         placeholder="e.g. alice"
                         className="flex-1"
                       />
-                      <Button size="sm" variant="ghost" onClick={() => removeValue(idx, vIdx)}>Remove</Button>
+                      <Button size="sm" variant="ghost" onClick={() => removeValue(idx, vIdx)}>{t('tags.remove')}</Button>
                     </div>
                   ))}
                   <div>
-                    <Button size="sm" variant="outline" onClick={() => addValue(idx)}>Add value</Button>
+                    <Button size="sm" variant="outline" onClick={() => addValue(idx)}>{t('tags.addValue')}</Button>
                   </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <div className="text-xs text-gray-500 w-16">Value</div>
+                  <div className="text-xs text-gray-500 w-16">{t('tags.value')}</div>
                   <Input
                     value={entry.values[0] ?? ''}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setValue(idx, 0, e.target.value)}

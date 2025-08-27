@@ -405,7 +405,7 @@
   "tags": {
     "title": "Tags",
     "insert": { "title": "Insérer des tags" },
-    "filter": { "equals": "Égalité de tag", "in": "Tag dans" },
+    "filter": { "equals": "Égal à", "in": "Contient l'un (IN)" },
     "key": "Clé",
     "value": "Valeur",
     "addKey": "Ajouter une clé",

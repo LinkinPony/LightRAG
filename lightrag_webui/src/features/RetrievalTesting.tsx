@@ -392,7 +392,9 @@ export default function RetrievalTesting() {
           </Button>
         </form>
       </div>
-      <QuerySettings />
+      <div className="shrink-0">
+        <QuerySettings />
+      </div>
     </div>
   )
 }

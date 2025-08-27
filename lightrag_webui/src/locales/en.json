@@ -409,7 +409,7 @@
     },
     "filter": {
       "equals": "Tag Equals",
-      "in": "Tag In"
+      "in": "Contains Any (IN)"
     },
     "key": "Key",
     "value": "Value",

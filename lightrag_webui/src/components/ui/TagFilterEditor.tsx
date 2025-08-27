@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
 import Separator from '@/components/ui/Separator'
 import type { TagEquals, TagIn } from '@/contexts/types'
+import { useTranslation } from 'react-i18next'
 
 type EqEntry = { key: string; value: string }
 type InEntry = { key: string; values: string[] }
@@ -44,6 +45,7 @@ export default function TagFilterEditor({
   value?: { tag_equals?: TagEquals; tag_in?: TagIn }
   onChange?: (next: { tag_equals?: TagEquals; tag_in?: TagIn }) => void
 }) {
+  const { t } = useTranslation()
   const [eqEntries, setEqEntries] = useState<EqEntry[]>(() => toEqEntries(value?.tag_equals))
   const [inEntries, setInEntries] = useState<InEntry[]>(() => toInEntries(value?.tag_in))
 
@@ -96,15 +98,29 @@ export default function TagFilterEditor({
     sync(eqEntries, next)
   }
 
-  useMemo(() => {
-    setEqEntries(toEqEntries(value?.tag_equals))
-    setInEntries(toInEntries(value?.tag_in))
+  // Keep internal state in sync with external value, but avoid wiping local editing rows
+  useEffect(() => {
+    const currentEqMap = eqToMap(eqEntries)
+    const nextEqMap = value?.tag_equals ?? {}
+    const currentInMap = inToMap(inEntries)
+    const nextInMap = value?.tag_in ?? {}
+
+    const eqSame = JSON.stringify(currentEqMap) === JSON.stringify(nextEqMap)
+    const inSame = JSON.stringify(currentInMap) === JSON.stringify(nextInMap)
+
+    if (!eqSame) {
+      setEqEntries(toEqEntries(value?.tag_equals))
+    }
+    if (!inSame) {
+      setInEntries(toInEntries(value?.tag_in))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value?.tag_equals, value?.tag_in])
 
   return (
     <div className="space-y-4">
       <div>
-        <div className="font-medium text-sm mb-2">Tag Equals</div>
+        <div className="font-medium text-sm mb-2">{t('tags.filter.equals')}</div>
         <div className="space-y-2">
           {eqEntries.length === 0 && (
             <div className="text-xs text-gray-500">No equals filters. Click "Add key".</div>
@@ -114,24 +130,24 @@ export default function TagFilterEditor({
               <Input
                 value={e.key}
                 onChange={(ev: React.ChangeEvent<HTMLInputElement>) => setEqKey(idx, ev.target.value)}
-                placeholder="key"
+                placeholder={t('tags.key')}
                 className="w-40"
               />
               <Input
                 value={e.value}
                 onChange={(ev: React.ChangeEvent<HTMLInputElement>) => setEqValue(idx, ev.target.value)}
-                placeholder="value"
+                placeholder={t('tags.value')}
                 className="flex-1"
               />
-              <Button size="sm" variant="ghost" onClick={() => removeEq(idx)}>Remove</Button>
+              <Button size="sm" variant="ghost" onClick={() => removeEq(idx)}>{t('tags.remove')}</Button>
             </div>
           ))}
-          <Button size="sm" variant="outline" onClick={addEq}>Add key</Button>
+          <Button size="sm" variant="outline" onClick={addEq}>{t('tags.addKey')}</Button>
         </div>
       </div>
       <Separator />
       <div>
-        <div className="font-medium text-sm mb-2">Tag In</div>
+        <div className="font-medium text-sm mb-2">{t('tags.filter.in')}</div>
         <div className="space-y-2">
           {inEntries.length === 0 && (
             <div className="text-xs text-gray-500">No in filters. Click "Add key".</div>
@@ -142,10 +158,10 @@ export default function TagFilterEditor({
                 <Input
                   value={e.key}
                   onChange={(ev: React.ChangeEvent<HTMLInputElement>) => setInKey(idx, ev.target.value)}
-                  placeholder="key"
+                  placeholder={t('tags.key')}
                   className="w-40"
                 />
-                <Button size="sm" variant="ghost" onClick={() => removeIn(idx)}>Remove</Button>
+                <Button size="sm" variant="ghost" onClick={() => removeIn(idx)}>{t('tags.remove')}</Button>
               </div>
               <div className="space-y-2">
                 {e.values.map((v, vIdx) => (
@@ -153,17 +169,17 @@ export default function TagFilterEditor({
                     <Input
                       value={v}
                       onChange={(ev: React.ChangeEvent<HTMLInputElement>) => setInValue(idx, vIdx, ev.target.value)}
-                      placeholder="value"
+                      placeholder={t('tags.value')}
                       className="flex-1"
                     />
-                    <Button size="sm" variant="ghost" onClick={() => removeInValue(idx, vIdx)}>Remove</Button>
+                    <Button size="sm" variant="ghost" onClick={() => removeInValue(idx, vIdx)}>{t('tags.remove')}</Button>
                   </div>
                 ))}
-                <Button size="sm" variant="outline" onClick={() => addInValue(idx)}>Add value</Button>
+                <Button size="sm" variant="outline" onClick={() => addInValue(idx)}>{t('tags.addValue')}</Button>
               </div>
             </div>
           ))}
-          <Button size="sm" variant="outline" onClick={addIn}>Add key</Button>
+          <Button size="sm" variant="outline" onClick={addIn}>{t('tags.addKey')}</Button>
         </div>
       </div>
     </div>

@@ -70,14 +70,13 @@ export default function QuerySettings() {
   )
 
   return (
-    <Card className="flex shrink-0 flex-col min-w-[220px]">
+    <Card className="flex shrink-0 flex-col w-[340px] md:w-[360px] lg:w-[380px] xl:w-[420px]">
       <CardHeader className="px-4 pt-4 pb-2">
         <CardTitle>{t('retrievePanel.querySettings.parametersTitle')}</CardTitle>
         <CardDescription className="sr-only">{t('retrievePanel.querySettings.parametersDescription')}</CardDescription>
       </CardHeader>
       <CardContent className="m-0 flex grow flex-col p-0 text-xs">
-        <div className="relative size-full">
-          <div className="absolute inset-0 flex flex-col gap-2 overflow-auto px-2 pr-3">
+        <div className="flex flex-col gap-2 overflow-auto px-2 pr-3 max-h-[calc(100vh-6rem)]">
             {/* Query Mode */}
             <>
               <TooltipProvider>
@@ -488,8 +487,6 @@ export default function QuerySettings() {
                 />
               </div>
             </>
-
-          </div>
         </div>
       </CardContent>
     </Card>

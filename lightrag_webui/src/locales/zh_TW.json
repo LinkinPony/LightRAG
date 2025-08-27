@@ -405,7 +405,7 @@
   "tags": {
     "title": "標籤",
     "insert": { "title": "插入標籤" },
-    "filter": { "equals": "等值篩選", "in": "包含篩選" },
+    "filter": { "equals": "等值篩選", "in": "包含任一 (IN)" },
     "key": "鍵",
     "value": "值",
     "addKey": "新增鍵",

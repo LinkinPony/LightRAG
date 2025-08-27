@@ -40,13 +40,14 @@ interface ButtonProps
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, tooltip, size, side = 'right', asChild = false, ...props }, ref) => {
+  ({ className, variant, tooltip, size, side = 'right', asChild = false, type = 'button', ...props }, ref) => {
     const Comp = asChild ? Slot : 'button'
     if (!tooltip) {
       return (
         <Comp
           className={cn(buttonVariants({ variant, size, className }), 'cursor-pointer')}
           ref={ref}
+          {...(!asChild ? { type } : {})}
           {...props}
         />
       )
@@ -59,6 +60,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             <Comp
               className={cn(buttonVariants({ variant, size, className }), 'cursor-pointer')}
               ref={ref}
+              {...(!asChild ? { type } : {})}
               {...props}
             />
           </TooltipTrigger>
