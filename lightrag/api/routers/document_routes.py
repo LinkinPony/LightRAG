@@ -16,9 +16,11 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     File,
+    Form,
     HTTPException,
     UploadFile,
 )
+import json
 from pydantic import BaseModel, Field, field_validator
 
 from lightrag import LightRAG
@@ -779,7 +781,10 @@ def get_unique_filename_in_enqueued(target_dir: Path, original_name: str) -> str
 
 
 async def pipeline_enqueue_file(
-    rag: LightRAG, file_path: Path, track_id: str = None
+    rag: LightRAG,
+    file_path: Path,
+    track_id: str = None,
+    tags: dict[str, str | list[str]] | None = None,
 ) -> tuple[bool, str]:
     """Add a file to the queue for processing
 
@@ -1159,7 +1164,10 @@ async def pipeline_enqueue_file(
 
             try:
                 await rag.apipeline_enqueue_documents(
-                    content, file_paths=file_path.name, track_id=track_id
+                    content,
+                    file_paths=file_path.name,
+                    track_id=track_id,
+                    tags=tags,
                 )
 
                 logger.info(
@@ -1243,7 +1251,12 @@ async def pipeline_enqueue_file(
                 logger.error(f"Error deleting file {file_path}: {str(e)}")
 
 
-async def pipeline_index_file(rag: LightRAG, file_path: Path, track_id: str = None):
+async def pipeline_index_file(
+    rag: LightRAG,
+    file_path: Path,
+    track_id: str = None,
+    tags: dict[str, str | list[str]] | None = None,
+):
     """Index a file with track_id
 
     Args:
@@ -1253,7 +1266,7 @@ async def pipeline_index_file(rag: LightRAG, file_path: Path, track_id: str = No
     """
     try:
         success, returned_track_id = await pipeline_enqueue_file(
-            rag, file_path, track_id
+            rag, file_path, track_id, tags
         )
         if success:
             await rag.apipeline_process_enqueue_documents()
@@ -1588,7 +1601,9 @@ def create_document_routes(
         "/upload", response_model=InsertResponse, dependencies=[Depends(combined_auth)]
     )
     async def upload_to_input_dir(
-        background_tasks: BackgroundTasks, file: UploadFile = File(...)
+        background_tasks: BackgroundTasks,
+        file: UploadFile = File(...),
+        tags: Optional[str] = Form(default=None),
     ):
         """
         Upload a file to the input directory and index it.
@@ -1619,6 +1634,48 @@ def create_document_routes(
                 )
 
             file_path = doc_manager.input_dir / safe_filename
+
+            # Parse optional tags from multipart form (JSON string)
+            parsed_tags: dict[str, str | list[str]] | None = None
+            if tags is not None:
+                try:
+                    raw = json.loads(tags)
+                except Exception:
+                    raise HTTPException(status_code=400, detail="Invalid 'tags' JSON string")
+
+                if not isinstance(raw, dict):
+                    raise HTTPException(status_code=400, detail="Invalid 'tags' format: expected object")
+
+                # Validate TagMap: key -> string | list[string]
+                cleaned: dict[str, str | list[str]] = {}
+                for k, v in raw.items():
+                    if not isinstance(k, str):
+                        raise HTTPException(status_code=400, detail="Invalid 'tags' key type: must be string")
+                    key = k.strip()
+                    if key == "":
+                        continue
+                    if isinstance(v, str):
+                        val = v.strip()
+                        if val:
+                            cleaned[key] = val
+                    elif isinstance(v, list):
+                        arr: list[str] = []
+                        for item in v:
+                            if not isinstance(item, str):
+                                raise HTTPException(status_code=400, detail="Invalid 'tags' list item type: must be string")
+                            s = item.strip()
+                            if s:
+                                arr.append(s)
+                        # dedupe while preserving order
+                        seen = set()
+                        arr_dedup = [x for x in arr if not (x in seen or seen.add(x))]
+                        if arr_dedup:
+                            cleaned[key] = arr_dedup
+                    else:
+                        raise HTTPException(status_code=400, detail="Invalid 'tags' value type: must be string or string[]")
+
+                if len(cleaned) > 0:
+                    parsed_tags = cleaned
             # Check if file already exists
             if file_path.exists():
                 return InsertResponse(
@@ -1633,7 +1690,7 @@ def create_document_routes(
             track_id = generate_track_id("upload")
 
             # Add to background tasks and get track_id
-            background_tasks.add_task(pipeline_index_file, rag, file_path, track_id)
+            background_tasks.add_task(pipeline_index_file, rag, file_path, track_id, parsed_tags)
 
             return InsertResponse(
                 status="success",
