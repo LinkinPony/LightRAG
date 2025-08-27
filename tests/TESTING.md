@@ -10,11 +10,18 @@ These rules are intentionally practical and minimal; follow them unless a strong
 - Prefer unit tests first; complement with integration tests for storage backends and API surfaces.
 
 ### Test Structure
-- Organize tests by domain capability rather than file parity with sources, for example:
-  - `tests/unit/` for pure logic and utilities
-  - `tests/integration/` for storage backends (Qdrant, MongoDB, Neo4j, etc.) and API routes
-  - `tests/e2e/` for end-to-end user flows (optional, kept lightweight)
-- Within each module, group tests by feature area using `pytest` classes or modules.
+- Top-level categories under `tests/`:
+  - `tests/unit/` — pure logic and utilities
+  - `tests/integration/` — storage backends (Qdrant, MongoDB, Neo4j, etc.) and API routes
+  - `tests/e2e/` — end-to-end user flows (kept lightweight)
+- Within each category, mirror the source tree structure exactly. Place tests alongside mirrored module paths, using descriptive test filenames.
+  - Examples:
+    - `lightrag/utils.py` → `tests/unit/lightrag/utils/test_utils.py`
+    - `lightrag/operate.py` → `tests/unit/lightrag/operate/test_operate.py`
+    - `lightrag/kg/qdrant_impl.py` → `tests/integration/lightrag/kg/test_qdrant_impl.py`
+    - `lightrag/api/routers/query_routes.py` → `tests/integration/lightrag/api/routers/test_query_routes.py`
+    - E2E API flow → `tests/e2e/lightrag/api/test_end_to_end_query.py`
+- For multi-feature modules, split tests into multiple files in the mirrored directory (e.g., `test_operate_tags.py`, `test_operate_rerank.py`).
 
 ### Naming Conventions
 - Test files: `test_<area>.py`
@@ -45,6 +52,52 @@ LightRAG supports multiple storage backends. Tests must run even when external s
   - Neo4j: detect via `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`.
 
 - Tests must skip (not fail) when a backend is not reachable. Use `pytest.skip` or markers (see below).
+
+### Environment, Workspace Isolation, and Working Directory (Integration/E2E)
+- Tests MAY optionally load a local `.env` at repo root to reuse developer settings; however, tests MUST enforce isolation by overriding workspace-related environment variables with a unique, temporary value for each test session.
+- Always use a temporary `working_dir` for tests to avoid polluting the repository directory. Prefer `tmp_path_factory.mktemp("lightrag")`.
+- Workspace variables to set for isolation (use the same random workspace across all of them):
+  - `WORKSPACE`
+  - Storage-specific workspace overrides (as supported by README):
+    - `REDIS_WORKSPACE`, `MILVUS_WORKSPACE`, `QDRANT_WORKSPACE`, `MONGODB_WORKSPACE`, `POSTGRES_WORKSPACE`, `NEO4J_WORKSPACE`
+- This ensures no cross-test or developer data contamination and enables simple garbage isolation on external services.
+
+Example session-scoped fixture:
+
+```python
+# tests/conftest.py
+import os, uuid
+from pathlib import Path
+import pytest
+
+@pytest.fixture(scope="session", autouse=True)
+def test_isolated_env(monkeypatch, tmp_path_factory):
+    # 1) Optionally load .env (non-fatal if missing)
+    try:
+        from dotenv import load_dotenv
+        env_file = Path('.env')
+        if env_file.exists():
+            load_dotenv(dotenv_path=env_file, override=False)
+    except Exception:
+        pass
+
+    # 2) Generate a unique workspace for this test session
+    ws = f"e2e_{uuid.uuid4().hex[:8]}"
+
+    # 3) Override workspace-related envs for strict isolation
+    for key in [
+        "WORKSPACE", "REDIS_WORKSPACE", "MILVUS_WORKSPACE",
+        "QDRANT_WORKSPACE", "MONGODB_WORKSPACE",
+        "POSTGRES_WORKSPACE", "NEO4J_WORKSPACE",
+    ]:
+        monkeypatch.setenv(key, ws)
+
+    # 4) Temporary working directory
+    working_dir = tmp_path_factory.mktemp("lightrag")
+    monkeypatch.setenv("WORKING_DIR", str(working_dir))
+
+    yield {"workspace": ws, "working_dir": working_dir}
+```
 
 ### Markers
 Define and use markers to control test selection:
@@ -147,7 +200,7 @@ pytest tests/unit/test_tags.py::test_matches_tag_filters -q
 ```
 
 ### Adding New Tests
-- Place under appropriate folder (`unit`, `integration`, or `e2e`).
+- Place new tests under the appropriate top-level folder (`unit`, `integration`, or `e2e`) and mirror the source module path.
 - Use markers and fixtures as above.
 - Keep assertions tight and inputs minimal.
 
