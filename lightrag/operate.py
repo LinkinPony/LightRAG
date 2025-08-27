@@ -2270,6 +2270,7 @@ async def _get_vector_context(
     query: str,
     chunks_vdb: BaseVectorStorage,
     query_param: QueryParam,
+    text_chunks_db: BaseKVStorage | None = None,
 ) -> list[dict]:
     """
     Retrieve text chunks from the vector database without reranking or truncation.
@@ -2316,12 +2317,28 @@ async def _get_vector_context(
                     "file_path": result.get("file_path", "unknown_source"),
                     "source_type": "vector",  # Mark the source type
                     "chunk_id": result.get("id"),  # Add chunk_id for deduplication
-                    # propagate tags if present in payload
+                    # propagate tags if present in payload (may be None)
                     "tags": result.get("tags"),
                 }
                 # Client-side tag filtering (Phase 2)
+                # Fallback: when payload lacks tags, try KV chunk.tags for filtering
+                tags_payload = chunk_with_metadata.get("tags")
+                if tags_payload is None and text_chunks_db is not None:
+                    try:
+                        cid = chunk_with_metadata.get("chunk_id")
+                        if cid:
+                            kv_chunk = await text_chunks_db.get_by_id(cid)
+                            if isinstance(kv_chunk, dict):
+                                tags_payload = kv_chunk.get("tags")
+                                # also propagate tags to output for downstream use
+                                if tags_payload is not None:
+                                    chunk_with_metadata["tags"] = tags_payload
+                    except Exception:
+                        # Ignore KV fallback errors; treat as no-tags
+                        pass
+
                 if matches_tag_filters(
-                    chunk_with_metadata.get("tags"),
+                    tags_payload,
                     getattr(query_param, "tag_equals", {}),
                     getattr(query_param, "tag_in", {}),
                 ):
@@ -2425,6 +2442,7 @@ async def _build_query_context(
                 query,
                 chunks_vdb,
                 query_param,
+                text_chunks_db=text_chunks_db,
             )
             # Track vector chunks with source metadata
             for i, chunk in enumerate(vector_chunks):
@@ -2914,14 +2932,14 @@ async def _get_node_data(
     )
 
     # Now, if you need the node data and degree in order:
-    node_datas = [nodes_dict.get(nid) for nid in node_ids]
+    raw_node_datas = [nodes_dict.get(nid) for nid in node_ids]
     node_degrees = [degrees_dict.get(nid, 0) for nid in node_ids]
 
-    if not all([n is not None for n in node_datas]):
+    if not all([n is not None for n in raw_node_datas]):
         logger.warning("Some nodes are missing, maybe the storage is damaged")
 
-    node_datas = []
-    for k, n, d in zip(results, node_datas, node_degrees):
+    filtered_node_datas = []
+    for k, n, d in zip(results, raw_node_datas, node_degrees):
         if n is None:
             continue
         enriched = {
@@ -2946,21 +2964,21 @@ async def _get_node_data(
             getattr(query_param, "tag_equals", {}),
             getattr(query_param, "tag_in", {}),
         ):
-            node_datas.append(enriched)
+            filtered_node_datas.append(enriched)
 
     use_relations = await _find_most_related_edges_from_entities(
-        node_datas,
+        filtered_node_datas,
         query_param,
         knowledge_graph_inst,
     )
 
     logger.info(
-        f"Local query: {len(node_datas)} entites, {len(use_relations)} relations"
+        f"Local query: {len(filtered_node_datas)} entites, {len(use_relations)} relations"
     )
 
     # Entities are sorted by cosine similarity
     # Relations are sorted by rank + weight
-    return node_datas, use_relations
+    return filtered_node_datas, use_relations
 
 
 async def _find_most_related_edges_from_entities(
@@ -3558,7 +3576,7 @@ async def naive_query(
 
     tokenizer: Tokenizer = global_config["tokenizer"]
 
-    chunks = await _get_vector_context(query, chunks_vdb, query_param)
+    chunks = await _get_vector_context(query, chunks_vdb, query_param, text_chunks_db=None)
 
     if chunks is None or len(chunks) == 0:
         return PROMPTS["fail_response"]

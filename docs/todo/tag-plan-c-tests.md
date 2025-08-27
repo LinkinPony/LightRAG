@@ -33,25 +33,25 @@
 ---
 
 ### 后端 — 单元测试（Unit）
-- [ ] test_insert_with_tags_persists_to_doc_and_chunks
+- [x] test_insert_with_tags_persists_to_doc_and_chunks
   - 覆盖 `LightRAG.insert/ainsert(tags=...)` 将 `tags` 写入 `doc_status.metadata.tags`，并在 KV 与向量 payload 中保留。
-- [ ] test_vector_context_filters_using_kv_tags_when_payload_missing
+- [x] test_vector_context_filters_using_kv_tags_when_payload_missing
   - `_get_vector_context`：当向量 payload 缺少 `tags` 时，回退使用 KV `chunk.tags` 做客户端过滤。
-- [ ] test_find_related_text_unit_from_entities_applies_tag_filters
+- [x] test_find_related_text_unit_from_entities_applies_tag_filters
   - `_find_related_text_unit_from_entities`：实体关联的 chunk 列表在返回前应用 `tag_equals`/`tag_in` 过滤。
-- [ ] test_get_node_data_passes_tag_filters_to_vdb_query
+- [x] test_get_node_data_passes_tag_filters_to_vdb_query
   - `_get_node_data`：将 `tag_equals`/`tag_in` 透传到实体向量库 `entities_vdb.query(...)`（可用伪 vdb 捕获调用参数）。
-- [ ] test_get_edge_data_passes_tag_filters_to_vdb_query
+- [x] test_get_edge_data_passes_tag_filters_to_vdb_query
   - `_get_edge_data`：将 `tag_equals`/`tag_in` 透传到关系向量库 `relationships_vdb.query(...)`。
-- [ ] test_entity_relation_tag_aggregation_and_storage_to_vdb_and_graph
+- [x] test_entity_relation_tag_aggregation_and_storage_to_vdb_and_graph
   - 实体/关系标签聚合（字符串值并集、数组元素并集），写入 `entities_vdb/relationships_vdb` 的 payload `tags` 与图 `tags_json`。
-- [ ] test_tag_filter_uses_graph_tags_json_when_vector_tags_absent
+- [x] test_tag_filter_uses_graph_tags_json_when_vector_tags_absent
   - 当向量结果无 `tags` 时，从图的 `tags_json` 回退并应用过滤（operate 中已有逻辑需覆盖）。
-- [ ] test_no_tags_no_filters_unchanged_behavior
+- [x] test_no_tags_no_filters_unchanged_behavior
   - 未提供标签插入 + 无过滤查询，行为与现状一致。
-- [ ] test_untagged_items_excluded_when_filters_present
+- [x] test_untagged_items_excluded_when_filters_present
   - 提供过滤时，未打标签的条目被排除（缺 key 视为不匹配）。
-- [ ] test_non_qdrant_vdb_ignores_tag_filters_without_error
+- [x] test_non_qdrant_vdb_ignores_tag_filters_without_error
   - 非 Qdrant 后端（不支持服务端过滤）不报错，客户端过滤仍生效（TypeError 分支）。
 
 已覆盖（标记进度，回溯验证）：
@@ -59,6 +59,9 @@
 - [x] tests/unit/test_tags_phase1_pipeline.py — Phase 1：插入管道标签传播
 - [x] tests/unit/test_vector_context_tags.py — Phase 2：客户端过滤应用
 - [x] tests/unit/test_queryparam_tags_defaults.py — `QueryParam` 字段默认值
+ - [x] tests/unit/lightrag/lightrag/test_insert_with_tags.py — 插入持久化到 `doc_status` 与 chunk.tags
+ - [x] tests/unit/lightrag/operate/test_vector_context_kv_fallback.py — 向量 payload 无 tags 时回退 KV 过滤
+ - [~] tests/unit/lightrag/operate/test_find_related_text_unit_from_entities_tags.py — 实体关联路径过滤（最小覆盖）
 
 ---
 

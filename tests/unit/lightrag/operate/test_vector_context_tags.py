@@ -24,7 +24,7 @@ async def test__get_vector_context_applies_tag_filters(lightrag_instance):
     qp.tag_equals = {"project": "alpha"}  # type: ignore[attr-defined]
     qp.tag_in = {"region": ["us"]}  # type: ignore[attr-defined]
 
-    results = await _get_vector_context("foo", rag.chunks_vdb, qp)
+    results = await _get_vector_context("foo", rag.chunks_vdb, qp, rag.text_chunks)
     assert isinstance(results, list)
     # All results should satisfy the tag filters once implemented
     for r in results:
