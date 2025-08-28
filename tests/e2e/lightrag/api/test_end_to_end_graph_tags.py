@@ -120,11 +120,11 @@ def test_e2e_graph_filter_and_properties_display(tmp_path):
         llm_model_func=dummy_llm,
     )
 
-    app = FastAPI()
+    from contextlib import asynccontextmanager
     from lightrag.kg.shared_storage import initialize_pipeline_status, finalize_share_data
 
-    @app.on_event("startup")
-    async def _startup():
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
         await rag.initialize_storages()
         await initialize_pipeline_status()
 
@@ -174,11 +174,13 @@ def test_e2e_graph_filter_and_properties_display(tmp_path):
 
         # Persist graph to disk and notify other processes to avoid reload race
         await rag.chunk_entity_relation_graph.index_done_callback()
+        try:
+            yield
+        finally:
+            await rag.finalize_storages()
+            finalize_share_data()
 
-    @app.on_event("shutdown")
-    async def _shutdown():
-        await rag.finalize_storages()
-        finalize_share_data()
+    app = FastAPI(lifespan=lifespan)
 
     from lightrag.api.routers.graph_routes import create_graph_routes
 

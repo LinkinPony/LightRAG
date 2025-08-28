@@ -234,16 +234,17 @@ class QdrantVectorDBStorage(BaseVectorStorage):
             models.Filter(must=must_conditions) if len(must_conditions) > 0 else None
         )
 
-        results = self._client.search(
+        results = self._client.query_points(
             collection_name=self.final_namespace,
-            query_vector=embedding[0],
+            query=embedding[0],
             limit=top_k,
             with_payload=True,
             score_threshold=self.cosine_better_than_threshold,
             query_filter=query_filter,
         )
 
-        # logger.debug(f"[{self.workspace}] query result: {results}")
+        # Normalize result list regardless of client version
+        points = getattr(results, "points", results)
 
         return [
             {
@@ -251,7 +252,7 @@ class QdrantVectorDBStorage(BaseVectorStorage):
                 "distance": dp.score,
                 "created_at": dp.payload.get("created_at"),
             }
-            for dp in results
+            for dp in points
         ]
 
     async def index_done_callback(self) -> None:

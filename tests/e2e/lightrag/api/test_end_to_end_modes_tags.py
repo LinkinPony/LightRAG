@@ -121,18 +121,20 @@ def test_e2e_modes_with_tag_filters(tmp_path, mode):
         llm_model_func=dummy_llm,
     )
 
-    app = FastAPI()
+    from contextlib import asynccontextmanager
     from lightrag.kg.shared_storage import initialize_pipeline_status, finalize_share_data
 
-    @app.on_event("startup")
-    async def _startup():
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
         await rag.initialize_storages()
         await initialize_pipeline_status()
+        try:
+            yield
+        finally:
+            await rag.finalize_storages()
+            finalize_share_data()
 
-    @app.on_event("shutdown")
-    async def _shutdown():
-        await rag.finalize_storages()
-        finalize_share_data()
+    app = FastAPI(lifespan=lifespan)
 
     from lightrag.api.routers.document_routes import DocumentManager, create_document_routes
     from lightrag.api.routers.query_routes import create_query_routes
