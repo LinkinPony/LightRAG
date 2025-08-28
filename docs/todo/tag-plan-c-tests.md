@@ -82,7 +82,7 @@
 ---
 
 ### 查询模式覆盖（Unit/Integration 皆可分层实现）
-- [ ] test_modes_apply_tag_filters_strictly_parametrized
+- [x] test_modes_apply_tag_filters_strictly_parametrized
   - 对 `mode ∈ {naive, local, global, hybrid, mix}` 参数化：
     - 仅 `tag_equals`
     - 仅 `tag_in`

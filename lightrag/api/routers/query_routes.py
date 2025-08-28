@@ -13,8 +13,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from ascii_colors import trace_exception
 
-router = APIRouter(tags=["query"])
-
 
 class QueryRequest(BaseModel):
     query: str = Field(
@@ -145,6 +143,8 @@ class QueryResponse(BaseModel):
 
 
 def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
+    # Create a fresh router per invocation to avoid cross-test/shared state issues
+    router = APIRouter(tags=["query"])
     combined_auth = get_combined_auth_dependency(api_key)
 
     @router.post(

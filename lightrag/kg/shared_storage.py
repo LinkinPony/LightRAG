@@ -1125,8 +1125,12 @@ async def set_all_update_flags(namespace: str):
         raise ValueError("Try to create namespace before Shared-Data is initialized")
 
     async with get_internal_lock():
+        # Lazily initialize missing namespace to avoid hard failure in lightweight contexts
         if namespace not in _update_flags:
-            raise ValueError(f"Namespace {namespace} not found in update flags")
+            if _is_multiprocess and _manager is not None:
+                _update_flags[namespace] = _manager.list()
+            else:
+                _update_flags[namespace] = []
         # Update flags for both modes
         for i in range(len(_update_flags[namespace])):
             _update_flags[namespace][i].value = True
@@ -1139,8 +1143,12 @@ async def clear_all_update_flags(namespace: str):
         raise ValueError("Try to create namespace before Shared-Data is initialized")
 
     async with get_internal_lock():
+        # Lazily initialize missing namespace to avoid hard failure in lightweight contexts
         if namespace not in _update_flags:
-            raise ValueError(f"Namespace {namespace} not found in update flags")
+            if _is_multiprocess and _manager is not None:
+                _update_flags[namespace] = _manager.list()
+            else:
+                _update_flags[namespace] = []
         # Update flags for both modes
         for i in range(len(_update_flags[namespace])):
             _update_flags[namespace][i].value = False
