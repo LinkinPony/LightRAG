@@ -66,14 +66,14 @@
 ---
 
 ### 后端 — 集成测试（Integration）
-- [ ] test_qdrant_chunk_server_side_tag_filters
-  - 替换 `tests/integration/test_qdrant_tag_filters.py` 中的占位：插入带标签的 chunks，使用 `tag_equals`/`tag_in` 检索，断言 Qdrant 服务端过滤生效（候选减少）且客户端复核通过。
-- [ ] test_qdrant_entity_relation_server_side_tag_filters
-  - 针对 `entities_vdb`、`relationships_vdb` 的服务端过滤用例；同 key 同时存在 equals+in 必须同时满足。
-- [ ] test_query_route_accepts_and_passes_tag_filters
-  - `/query` API 路由接收并透传 `tag_equals`/`tag_in`（使用 TestClient）。
-- [ ] test_graph_query_route_accepts_and_passes_tag_filters
-  - 图谱查询路由接收并透传 `tag_equals`/`tag_in`；并在节点/边结果中看到 `tags`/`tags_json`（若存在）。
+- [x] test_qdrant_chunk_server_side_tag_filters
+  - 已实现于 `tests/integration/lightrag/kg/test_qdrant_tag_filters.py`：插入带标签的 chunks，使用 `tag_equals`/`tag_in` 检索，断言服务端过滤生效与同时满足逻辑；无 `QDRANT_URL`、未安装 `qdrant-client` 或不可达时自动 skip；使用唯一 `QDRANT_WORKSPACE` 并初始化 shared_storage 锁。
+- [x] test_qdrant_entity_relation_server_side_tag_filters
+  - 已实现于 `tests/integration/lightrag/kg/test_qdrant_tag_filters.py`：分别对 `entities_vdb`、`relationships_vdb` 插入标签并检索，验证 `tag_equals`/`tag_in` 及组合条件；无 `QDRANT_URL`、未安装 `qdrant-client` 或不可达时自动 skip；使用唯一 `QDRANT_WORKSPACE` 并初始化 shared_storage 锁。
+- [x] test_query_route_accepts_and_passes_tag_filters
+  - 已实现于 `tests/integration/lightrag/api/routers/test_query_routes_tags.py`：使用 TestClient 验证 `/query` 接收并透传 `tag_equals`/`tag_in` 至 `QueryParam`。
+- [x] test_graph_query_route_accepts_and_passes_tag_filters
+  - 已实现于 `tests/integration/lightrag/api/routers/test_graph_routes_tags.py`：使用 TestClient 验证 `/graphs` 可附带 `tag_equals`/`tag_in` 查询参数且响应包含节点/边的 `tags` 或 `tags_json`（若存在）。
 
 环境与跳过策略：
 - Qdrant：通过 `QDRANT_URL` 检测可用性，不可用时 `pytest.skip(...)`（参考占位测试写法）。
