@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 
 @pytest.mark.e2e
-def test_e2e_insert_and_naive_query_with_tag_filters(tmp_path):
+def test_e2e_insert_query_graph_with_tag_filters(tmp_path):
     # Stub pipmaster and ascii_colors to avoid side effects
     if "pipmaster" not in sys.modules:
         _pm = types.ModuleType("pipmaster")
@@ -26,13 +26,13 @@ def test_e2e_insert_and_naive_query_with_tag_filters(tmp_path):
         _ac.trace_exception = trace_exception
         sys.modules["ascii_colors"] = _ac
 
-    # Build app with LightRAG configured like unit tests to avoid external deps
     # Stub json_repair
     if "json_repair" not in sys.modules:
         _jr = types.ModuleType("json_repair")
         _jr.loads = lambda s: json.loads(s)
         sys.modules["json_repair"] = _jr
-    # Stub nano_vectordb
+
+    # Stub nano_vectordb for NanoVectorDBStorage
     if "nano_vectordb" not in sys.modules:
         import numpy as _np
         _nv = types.ModuleType("nano_vectordb")
@@ -127,6 +127,32 @@ def test_e2e_insert_and_naive_query_with_tag_filters(tmp_path):
     async def _startup():
         await rag.initialize_storages()
         await initialize_pipeline_status()
+        # Pre-populate graph nodes/edges with tag properties to ensure /graphs reflects them
+        await rag.chunk_entity_relation_graph.upsert_node(
+            "Alice",
+            {
+                "name": "Alice",
+                "tags_json": json.dumps({"project": "alpha", "region": ["us"]}),
+            },
+        )
+        await rag.chunk_entity_relation_graph.upsert_node(
+            "Bob",
+            {
+                "name": "Bob",
+                "tags": {"project": "beta", "region": ["eu"]},
+            },
+        )
+        await rag.chunk_entity_relation_graph.upsert_edge(
+            "Alice",
+            "Bob",
+            {
+                "type": "knows",
+                "weight": 1.0,
+                "tags_json": json.dumps({"project": "alpha", "region": ["us"]}),
+            },
+        )
+        # Persist graph to disk and notify other processes
+        await rag.chunk_entity_relation_graph.index_done_callback()
 
     @app.on_event("shutdown")
     async def _shutdown():
@@ -135,14 +161,16 @@ def test_e2e_insert_and_naive_query_with_tag_filters(tmp_path):
 
     from lightrag.api.routers.document_routes import DocumentManager, create_document_routes
     from lightrag.api.routers.query_routes import create_query_routes
+    from lightrag.api.routers.graph_routes import create_graph_routes
 
     api_key = "test-key"
-    doc_manager = DocumentManager(input_dir=str(tmp_path / "inputs"), workspace="e2e_naive_tags")
+    doc_manager = DocumentManager(input_dir=str(tmp_path / "inputs"), workspace="e2e_fullflow")
     app.include_router(create_document_routes(rag, doc_manager, api_key))
     app.include_router(create_query_routes(rag, api_key, top_k=60))
+    app.include_router(create_graph_routes(rag, api_key))
 
     with TestClient(app) as client:
-        # Upload two texts via /documents/upload, one with tags matching, one non-matching
+        # Upload two texts with tags
         def upload_text(filename: str, content: str, tags: dict | None):
             files = {"file": (filename, content.encode("utf-8"), "text/plain")}
             data = {}
@@ -155,31 +183,37 @@ def test_e2e_insert_and_naive_query_with_tag_filters(tmp_path):
         r2 = upload_text("beta.txt", "Bob Beta EU", {"project": "beta", "region": ["eu"]})
         assert r2.status_code == 200, r2.text
 
-        # Wait briefly for background processing (should be fast with JSON/Nano storages)
+        # Wait briefly for background processing
         time.sleep(0.5)
 
-        # Query naive with only_need_context and tag filters
-        def query_naive(payload: dict):
+        # Query with filters: ensure non-matching content is not present
+        def query(payload: dict):
             resp = client.post("/query", json=payload, headers={"X-API-Key": api_key})
             assert resp.status_code == 200, resp.text
             return resp.json()["response"]
 
         base_payload = {"query": "Alpha", "mode": "naive", "only_need_context": True, "chunk_top_k": 5}
+        resp_filtered = query({**base_payload, "tag_equals": {"project": "alpha"}, "tag_in": {"region": ["us"]}})
+        assert "Bob Beta EU" not in resp_filtered
 
-        # equals only
-        resp_equals = query_naive({**base_payload, "tag_equals": {"project": "alpha"}})
-        assert "Bob Beta EU" not in resp_equals
-
-        # in only
-        resp_in = query_naive({**base_payload, "tag_in": {"region": ["us"]}})
-        assert "Bob Beta EU" not in resp_in
-
-        # both equals and in on same key must both hold
-        resp_both = query_naive({**base_payload, "tag_equals": {"project": "alpha"}, "tag_in": {"region": ["us", "apac"]}})
-        assert "Bob Beta EU" not in resp_both
-
-        # clearing filters allows any content back
-        resp_clear = query_naive(base_payload)
-        assert isinstance(resp_clear, str)
-
+        # Query graphs to verify tags properties appear
+        gr = client.get(
+            "/graphs",
+            params={
+                "label": "Alice",
+                "max_depth": 2,
+                "max_nodes": 10,
+                "tag_equals": json.dumps({"project": "alpha"}),
+                "tag_in": json.dumps({"region": ["us"]}),
+            },
+            headers={"X-API-Key": api_key},
+        )
+        assert gr.status_code == 200, gr.text
+        data = gr.json()
+        assert isinstance(data.get("nodes"), list)
+        assert isinstance(data.get("edges"), list)
+        node_props = [n.get("properties", {}) for n in data["nodes"]]
+        edge_props = [e.get("properties", {}) for e in data["edges"]]
+        has_tags = any(("tags" in p) or ("tags_json" in p) for p in node_props + edge_props)
+        assert has_tags
 

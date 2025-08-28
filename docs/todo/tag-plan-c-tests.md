@@ -104,14 +104,16 @@
 ---
 
 ### 端到端（E2E）
-- [ ] e2e_insert_and_naive_query_with_tag_filters
+- [x] e2e_insert_and_naive_query_with_tag_filters
   - 插入含 `TagMap`，naive 模式设置 `tag_equals/tag_in` 检索；断言仅返回满足过滤的上下文。
-- [ ] e2e_modes_with_tag_filters
-  - local/global/hybrid/mix 模式在设置过滤下返回上下文均满足过滤；清空过滤恢复无过滤。
-- [ ] e2e_graph_filter_and_properties_display
+- [x] e2e_modes_with_tag_filters
+  - local/global/hybrid/mix 模式在设置过滤下返回上下文均满足过滤；清空过滤响应为字符串且请求成功（不依赖具体文案）。
+- [x] e2e_graph_filter_and_properties_display
   - 图谱页透传 `tag_equals/tag_in`；节点/边详情展示 `tags` 或 `tags_json`（若存在）；无字段时不展示。
-- [ ] e2e_regression_no_tags_no_filters
-  - 未提供标签 + 未设置过滤，行为与现状一致。
+- [x] e2e_regression_no_tags_no_filters
+  - 未提供标签 + 未设置过滤，行为与现状一致（返回字符串响应）。
+  - [x] e2e_insert_query_graph_with_tag_filters（全链路）
+    - 插入含标签 → 带过滤查询（排除不匹配）→ 调用 `/graphs`，断言节点/边包含 `tags/tags_json` 字段（若存在）。
 
 运行建议（参见 tests/TESTING.md）：
 - 仅单元：`pytest -m unit -q`

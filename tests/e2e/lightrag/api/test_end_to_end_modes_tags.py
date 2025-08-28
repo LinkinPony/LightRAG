@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 
 
 @pytest.mark.e2e
-def test_e2e_insert_and_naive_query_with_tag_filters(tmp_path):
+@pytest.mark.parametrize("mode", ["local", "global", "hybrid", "mix"])
+def test_e2e_modes_with_tag_filters(tmp_path, mode):
     # Stub pipmaster and ascii_colors to avoid side effects
     if "pipmaster" not in sys.modules:
         _pm = types.ModuleType("pipmaster")
@@ -26,13 +27,13 @@ def test_e2e_insert_and_naive_query_with_tag_filters(tmp_path):
         _ac.trace_exception = trace_exception
         sys.modules["ascii_colors"] = _ac
 
-    # Build app with LightRAG configured like unit tests to avoid external deps
     # Stub json_repair
     if "json_repair" not in sys.modules:
         _jr = types.ModuleType("json_repair")
         _jr.loads = lambda s: json.loads(s)
         sys.modules["json_repair"] = _jr
-    # Stub nano_vectordb
+
+    # Stub nano_vectordb (used by NanoVectorDBStorage) to avoid external deps
     if "nano_vectordb" not in sys.modules:
         import numpy as _np
         _nv = types.ModuleType("nano_vectordb")
@@ -137,7 +138,7 @@ def test_e2e_insert_and_naive_query_with_tag_filters(tmp_path):
     from lightrag.api.routers.query_routes import create_query_routes
 
     api_key = "test-key"
-    doc_manager = DocumentManager(input_dir=str(tmp_path / "inputs"), workspace="e2e_naive_tags")
+    doc_manager = DocumentManager(input_dir=str(tmp_path / "inputs"), workspace="e2e_modes_tags")
     app.include_router(create_document_routes(rag, doc_manager, api_key))
     app.include_router(create_query_routes(rag, api_key, top_k=60))
 
@@ -158,28 +159,29 @@ def test_e2e_insert_and_naive_query_with_tag_filters(tmp_path):
         # Wait briefly for background processing (should be fast with JSON/Nano storages)
         time.sleep(0.5)
 
-        # Query naive with only_need_context and tag filters
-        def query_naive(payload: dict):
+        # Query given mode with only_need_context and tag filters
+        def query_with_filters(payload: dict):
             resp = client.post("/query", json=payload, headers={"X-API-Key": api_key})
             assert resp.status_code == 200, resp.text
             return resp.json()["response"]
 
-        base_payload = {"query": "Alpha", "mode": "naive", "only_need_context": True, "chunk_top_k": 5}
+        base_payload = {"query": "Alpha", "mode": mode, "only_need_context": True, "chunk_top_k": 5}
 
         # equals only
-        resp_equals = query_naive({**base_payload, "tag_equals": {"project": "alpha"}})
+        resp_equals = query_with_filters({**base_payload, "tag_equals": {"project": "alpha"}})
         assert "Bob Beta EU" not in resp_equals
 
         # in only
-        resp_in = query_naive({**base_payload, "tag_in": {"region": ["us"]}})
+        resp_in = query_with_filters({**base_payload, "tag_in": {"region": ["us"]}})
         assert "Bob Beta EU" not in resp_in
 
         # both equals and in on same key must both hold
-        resp_both = query_naive({**base_payload, "tag_equals": {"project": "alpha"}, "tag_in": {"region": ["us", "apac"]}})
+        resp_both = query_with_filters({**base_payload, "tag_equals": {"project": "alpha"}, "tag_in": {"region": ["us", "apac"]}})
         assert "Bob Beta EU" not in resp_both
 
-        # clearing filters allows any content back
-        resp_clear = query_naive(base_payload)
+        # clearing filters: request succeeds and returns a string response.
+        # Some modes may legitimately have no context; do not enforce content presence.
+        resp_clear = query_with_filters(base_payload)
         assert isinstance(resp_clear, str)
 
 
