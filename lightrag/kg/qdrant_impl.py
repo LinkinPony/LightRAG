@@ -200,22 +200,24 @@ class QdrantVectorDBStorage(BaseVectorStorage):
         return results
 
     async def query(
-            self,
+        self,
         query: str,
         top_k: int,
-        ids: list[str] | None = None,
+        query_embedding: list[float] = None,
         tag_equals: dict[str, str] | None = None,
         tag_in: dict[str, list[str]] | None = None,
     ) -> list[dict[str, Any]]:
-        embedding = await self.embedding_func(
-            [query], _priority=5
-        )  # higher priority for query
+        # Prepare embedding
+        if query_embedding is not None:
+            embedding = query_embedding
+        else:
+            embedding_result = await self.embedding_func([query], _priority=5)
+            embedding = embedding_result[0]
 
         # Build optional server-side tag filters (Tag Plan C - Phase 3)
         must_conditions: list[models.FieldCondition] = []
         if tag_equals:
             for k, v in tag_equals.items():
-                # Exact match on single value
                 must_conditions.append(
                     models.FieldCondition(
                         key=f"tags.{k}", match=models.MatchValue(value=v)
@@ -230,13 +232,12 @@ class QdrantVectorDBStorage(BaseVectorStorage):
                         )
                     )
 
-        query_filter = (
-            models.Filter(must=must_conditions) if len(must_conditions) > 0 else None
-        )
+        query_filter = models.Filter(must=must_conditions) if must_conditions else None
 
-        results = self._client.query_points(
+        # Use search API for compatibility across client versions
+        results = self._client.search(
             collection_name=self.final_namespace,
-            query=embedding[0],
+            query_vector=embedding,
             limit=top_k,
             with_payload=True,
             score_threshold=self.cosine_better_than_threshold,

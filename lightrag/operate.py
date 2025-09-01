@@ -11,12 +11,11 @@ from collections import Counter, defaultdict
 
 from .utils import (
     logger,
-    clean_str,
     compute_mdhash_id,
     Tokenizer,
     matches_tag_filters,
     is_float_regex,
-    normalize_extracted_info,
+    sanitize_and_normalize_extracted_text,
     pack_user_ass_to_openai_messages,
     split_string_by_multi_markers,
     truncate_list_by_token_size,
@@ -32,7 +31,6 @@ from .utils import (
     pick_by_vector_similarity,
     process_chunks_unified,
     build_file_path,
-    sanitize_text_for_encoding,
 )
 from .base import (
     BaseGraphStorage,
@@ -317,18 +315,18 @@ async def _handle_single_entity_extraction(
     chunk_key: str,
     file_path: str = "unknown_source",
 ):
-    if len(record_attributes) < 4 or '"entity"' not in record_attributes[0]:
+    if len(record_attributes) < 4 or "entity" not in record_attributes[0]:
+        if len(record_attributes) > 1 and "entity" in record_attributes[0]:
+            logger.warning(
+                f"Entity extraction failed in {chunk_key}: expecting 4 fields but got {len(record_attributes)}"
+            )
+            logger.warning(f"Entity extracted: {record_attributes[1]}")
         return None
 
     try:
-        # Step 1: Strict UTF-8 encoding sanitization (fail-fast approach)
-        entity_name = sanitize_text_for_encoding(record_attributes[1])
-
-        # Step 2: HTML and control character cleaning
-        entity_name = clean_str(entity_name).strip()
-
-        # Step 3: Business logic normalization
-        entity_name = normalize_extracted_info(entity_name, is_entity=True)
+        entity_name = sanitize_and_normalize_extracted_text(
+            record_attributes[1], remove_inner_quotes=True
+        )
 
         # Validate entity name after all cleaning steps
         if not entity_name or not entity_name.strip():
@@ -338,18 +336,20 @@ async def _handle_single_entity_extraction(
             return None
 
         # Process entity type with same cleaning pipeline
-        entity_type = sanitize_text_for_encoding(record_attributes[2])
-        entity_type = clean_str(entity_type).strip('"')
-        if not entity_type.strip() or entity_type.startswith('("'):
+        entity_type = sanitize_and_normalize_extracted_text(
+            record_attributes[2], remove_inner_quotes=True
+        )
+
+        if not entity_type.strip() or any(
+            char in entity_type for char in ["'", "(", ")", "<", ">", "|", "/", "\\"]
+        ):
             logger.warning(
                 f"Entity extraction error: invalid entity type in: {record_attributes}"
             )
             return None
 
         # Process entity description with same cleaning pipeline
-        entity_description = sanitize_text_for_encoding(record_attributes[3])
-        entity_description = clean_str(entity_description)
-        entity_description = normalize_extracted_info(entity_description)
+        entity_description = sanitize_and_normalize_extracted_text(record_attributes[3])
 
         if not entity_description.strip():
             logger.warning(
@@ -382,31 +382,30 @@ async def _handle_single_relationship_extraction(
     chunk_key: str,
     file_path: str = "unknown_source",
 ):
-    if len(record_attributes) < 5 or '"relationship"' not in record_attributes[0]:
+    if len(record_attributes) < 5 or "relationship" not in record_attributes[0]:
+        if len(record_attributes) > 1 and "relationship" in record_attributes[0]:
+            logger.warning(
+                f"Relation extraction failed in {chunk_key}: expecting 5 fields but got {len(record_attributes)}"
+            )
+            logger.warning(f"Relation extracted: {record_attributes[1]}")
         return None
 
     try:
-        # Process source and target entities with strict cleaning pipeline
-        # Step 1: Strict UTF-8 encoding sanitization (fail-fast approach)
-        source = sanitize_text_for_encoding(record_attributes[1])
-        # Step 2: HTML and control character cleaning
-        source = clean_str(source)
-        # Step 3: Business logic normalization
-        source = normalize_extracted_info(source, is_entity=True)
-
-        # Same pipeline for target entity
-        target = sanitize_text_for_encoding(record_attributes[2])
-        target = clean_str(target)
-        target = normalize_extracted_info(target, is_entity=True)
+        source = sanitize_and_normalize_extracted_text(
+            record_attributes[1], remove_inner_quotes=True
+        )
+        target = sanitize_and_normalize_extracted_text(
+            record_attributes[2], remove_inner_quotes=True
+        )
 
         # Validate entity names after all cleaning steps
-        if not source or not source.strip():
+        if not source:
             logger.warning(
                 f"Relationship extraction error: source entity became empty after cleaning. Original: '{record_attributes[1]}'"
             )
             return None
 
-        if not target or not target.strip():
+        if not target:
             logger.warning(
                 f"Relationship extraction error: target entity became empty after cleaning. Original: '{record_attributes[2]}'"
             )
@@ -418,16 +417,14 @@ async def _handle_single_relationship_extraction(
             )
             return None
 
-        # Process relationship description with same cleaning pipeline
-        edge_description = sanitize_text_for_encoding(record_attributes[3])
-        edge_description = clean_str(edge_description)
-        edge_description = normalize_extracted_info(edge_description)
-
         # Process keywords with same cleaning pipeline
-        edge_keywords = sanitize_text_for_encoding(record_attributes[4])
-        edge_keywords = clean_str(edge_keywords)
-        edge_keywords = normalize_extracted_info(edge_keywords, is_entity=True)
+        edge_keywords = sanitize_and_normalize_extracted_text(
+            record_attributes[3], remove_inner_quotes=True
+        )
         edge_keywords = edge_keywords.replace("，", ",")
+
+        # Process relationship description with same cleaning pipeline
+        edge_description = sanitize_and_normalize_extracted_text(record_attributes[4])
 
         edge_source_id = chunk_key
         weight = (
@@ -447,12 +444,12 @@ async def _handle_single_relationship_extraction(
         )
 
     except ValueError as e:
-        logger.error(
+        logger.warning(
             f"Relationship extraction failed due to encoding issues in chunk {chunk_key}: {e}"
         )
         return None
     except Exception as e:
-        logger.error(
+        logger.warning(
             f"Relationship extraction failed with unexpected error in chunk {chunk_key}: {e}"
         )
         return None
@@ -826,13 +823,20 @@ async def _parse_extraction_result(
     maybe_nodes = defaultdict(list)
     maybe_edges = defaultdict(list)
 
+    # Preventive fix: when tuple_delimiter is <|>, fix LLM output instability issues
+    if context_base["tuple_delimiter"] == "<|>":
+        # 1. Convert <||> to <|>
+        extraction_result = extraction_result.replace("<||>", "<|>")
+        # 2. Convert < | > to <|>
+        extraction_result = extraction_result.replace("< | >", "<|>")
+
     # Parse the extraction result using the same logic as in extract_entities
     records = split_string_by_multi_markers(
         extraction_result,
         [context_base["record_delimiter"], context_base["completion_delimiter"]],
     )
     for record in records:
-        record = re.search(r"\((.*)\)", record)
+        record = re.search(r"\((.*)\)", record, re.DOTALL)
         if record is None:
             continue
         record = record.group(1)
@@ -1756,13 +1760,8 @@ async def extract_entities(
     entity_types = global_config["addon_params"].get(
         "entity_types", DEFAULT_ENTITY_TYPES
     )
-    example_number = global_config["addon_params"].get("example_number", None)
-    if example_number and example_number < len(PROMPTS["entity_extraction_examples"]):
-        examples = "\n".join(
-            PROMPTS["entity_extraction_examples"][: int(example_number)]
-        )
-    else:
-        examples = "\n".join(PROMPTS["entity_extraction_examples"])
+
+    examples = "\n".join(PROMPTS["entity_extraction_examples"])
 
     example_context_base = dict(
         tuple_delimiter=PROMPTS["DEFAULT_TUPLE_DELIMITER"],
@@ -1804,13 +1803,20 @@ async def extract_entities(
         maybe_nodes = defaultdict(list)
         maybe_edges = defaultdict(list)
 
+        # Preventive fix: when tuple_delimiter is <|>, fix LLM output instability issues
+        if context_base["tuple_delimiter"] == "<|>":
+            # 1. Convert <||> to <|>
+            result = result.replace("<||>", "<|>")
+            # 2. Convert < | > to <|>
+            result = result.replace("< | >", "<|>")
+
         records = split_string_by_multi_markers(
             result,
             [context_base["record_delimiter"], context_base["completion_delimiter"]],
         )
 
         for record in records:
-            record = re.search(r"\((.*)\)", record)
+            record = re.search(r"\((.*)\)", record, re.DOTALL)
             if record is None:
                 continue
             record = record.group(1)
@@ -2207,13 +2213,8 @@ async def extract_keywords_only(
             )
 
     # 2. Build the examples
-    example_number = global_config["addon_params"].get("example_number", None)
-    if example_number and example_number < len(PROMPTS["keywords_extraction_examples"]):
-        examples = "\n".join(
-            PROMPTS["keywords_extraction_examples"][: int(example_number)]
-        )
-    else:
-        examples = "\n".join(PROMPTS["keywords_extraction_examples"])
+    examples = "\n".join(PROMPTS["keywords_extraction_examples"])
+
     language = global_config["addon_params"].get("language", DEFAULT_SUMMARY_LANGUAGE)
 
     # 3. Process conversation history
@@ -2301,6 +2302,7 @@ async def _get_vector_context(
     query: str,
     chunks_vdb: BaseVectorStorage,
     query_param: QueryParam,
+    query_embedding: list[float] = None,
     text_chunks_db: BaseKVStorage | None = None,
 ) -> list[dict]:
     """
@@ -2313,6 +2315,7 @@ async def _get_vector_context(
         query: The query string to search for
         chunks_vdb: Vector database containing document chunks
         query_param: Query parameters including chunk_top_k and ids
+        query_embedding: Optional pre-computed query embedding to avoid redundant embedding calls
 
     Returns:
         List of text chunks with metadata
@@ -2326,14 +2329,15 @@ async def _get_vector_context(
             results = await chunks_vdb.query(
                 query,
                 top_k=search_top_k,
-                ids=query_param.ids,
+                query_embedding=query_embedding,
                 tag_equals=getattr(query_param, "tag_equals", {}) or None,
                 tag_in=getattr(query_param, "tag_in", {}) or None,
             )
         except TypeError:
-            # Fallback for backends that don't accept tag filters
+            # Fallback for backends that don't accept tag filters or query_embedding param
             results = await chunks_vdb.query(
-                query, top_k=search_top_k, ids=query_param.ids
+                query,
+                top_k=search_top_k,
             )
         if not results:
             logger.info(f"Naive query: 0 chunks (chunk_top_k: {search_top_k})")
@@ -2396,6 +2400,10 @@ async def _build_query_context(
     query_param: QueryParam,
     chunks_vdb: BaseVectorStorage = None,
 ):
+    if not query:
+        logger.warning("Query is empty, skipping context building")
+        return ""
+
     logger.info(f"Process {os.getpid()} building query context...")
 
     # Collect chunks from different sources separately
@@ -2414,12 +2422,12 @@ async def _build_query_context(
     # Track chunk sources and metadata for final logging
     chunk_tracking = {}  # chunk_id -> {source, frequency, order}
 
-    # Pre-compute query embedding if vector similarity method is used
+    # Pre-compute query embedding once for all vector operations
     kg_chunk_pick_method = text_chunks_db.global_config.get(
         "kg_chunk_pick_method", DEFAULT_KG_CHUNK_PICK_METHOD
     )
     query_embedding = None
-    if kg_chunk_pick_method == "VECTOR" and query and chunks_vdb:
+    if query and (kg_chunk_pick_method == "VECTOR" or chunks_vdb):
         embedding_func_config = text_chunks_db.embedding_func
         if embedding_func_config and embedding_func_config.func:
             try:
@@ -2427,9 +2435,7 @@ async def _build_query_context(
                 query_embedding = query_embedding[
                     0
                 ]  # Extract first embedding from batch result
-                logger.debug(
-                    "Pre-computed query embedding for vector similarity chunk selection"
-                )
+                logger.debug("Pre-computed query embedding for all vector operations")
             except Exception as e:
                 logger.warning(f"Failed to pre-compute query embedding: {e}")
                 query_embedding = None
@@ -2473,6 +2479,7 @@ async def _build_query_context(
                 query,
                 chunks_vdb,
                 query_param,
+                query_embedding,
                 text_chunks_db=text_chunks_db,
             )
             # Track vector chunks with source metadata
@@ -2941,14 +2948,11 @@ async def _get_node_data(
         results = await entities_vdb.query(
             query,
             top_k=query_param.top_k,
-            ids=query_param.ids,
             tag_equals=getattr(query_param, "tag_equals", {}) or None,
             tag_in=getattr(query_param, "tag_in", {}) or None,
         )
     except TypeError:
-        results = await entities_vdb.query(
-            query, top_k=query_param.top_k, ids=query_param.ids
-        )
+        results = await entities_vdb.query(query, top_k=query_param.top_k)
 
     if not len(results):
         return [], []
@@ -3252,14 +3256,11 @@ async def _get_edge_data(
         results = await relationships_vdb.query(
             keywords,
             top_k=query_param.top_k,
-            ids=query_param.ids,
             tag_equals=getattr(query_param, "tag_equals", {}) or None,
             tag_in=getattr(query_param, "tag_in", {}) or None,
         )
     except TypeError:
-        results = await relationships_vdb.query(
-            keywords, top_k=query_param.top_k, ids=query_param.ids
-        )
+        results = await relationships_vdb.query(keywords, top_k=query_param.top_k)
 
     if not len(results):
         return [], []
@@ -3607,7 +3608,13 @@ async def naive_query(
 
     tokenizer: Tokenizer = global_config["tokenizer"]
 
-    chunks = await _get_vector_context(query, chunks_vdb, query_param, text_chunks_db=None)
+    chunks = await _get_vector_context(
+        query,
+        chunks_vdb,
+        query_param,
+        None,
+        text_chunks_db=None,
+    )
 
     if chunks is None or len(chunks) == 0:
         return PROMPTS["fail_response"]
